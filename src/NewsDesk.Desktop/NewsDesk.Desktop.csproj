@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\NewsDesk.Core\NewsDesk.Core.csproj" />
+    <ProjectReference Include="..\NewsDesk.Infrastructure\NewsDesk.Infrastructure.csproj" />
+    <ProjectReference Include="..\NewsDesk.Connectors\NewsDesk.Connectors.csproj" />
+    <ProjectReference Include="..\NewsDesk.Exports\NewsDesk.Exports.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+</Project>
