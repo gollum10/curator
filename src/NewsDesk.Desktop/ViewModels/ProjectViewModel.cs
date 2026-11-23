@@ -333,9 +333,14 @@ public sealed partial class ProjectViewModel : ObservableObject
         SelectedItem = Items.FirstOrDefault(i => i.ArticleId == keepSelection);
     }
 
+    private Guid? _briefingRunId;
+    private bool _briefingIsStories;
+
     private void LoadBriefing()
     {
         var run = _s.Store.GetLatestBriefingRun(Project.Id);
+        _briefingRunId = run?.Id;
+        _briefingIsStories = run is not null && _s.Store.GetRules(run.RuleVersionId).Mode == CurationMode.Stories;
         if (run is null)
         {
             BriefingTitle = "No briefing yet";
@@ -519,9 +524,16 @@ public sealed partial class ProjectViewModel : ObservableObject
         Flush();
         var rows = Items.Select(i => ReloadRow(i)).OfType<ItemRow>().ToList();
         if (rows.Count == 0) { _dialogs.Info("There is nothing in this view to export."); return; }
-        _dialogs.ShowExport(IsCollectionView
-            ? new ExportViewModel(_dialogs, rows, Project.Name, View.Label, collectionName: View.Label)
-            : new ExportViewModel(_dialogs, rows, Project.Name, $"{Project.Name} — {View.Label}"));
+        if (IsCollectionView)
+        {
+            _dialogs.ShowExport(new ExportViewModel(_dialogs, rows, Project.Name, View.Label, collectionName: View.Label));
+            return;
+        }
+        // A distinct-stories briefing exports to Excel as one risk per row plus a supporting-sources sheet.
+        var risks = IsBriefingView && _briefingIsStories && _briefingRunId is { } runId
+            ? _s.Store.GetBriefing(Project.Id, runId).Where(b => !b.Lead.IsDismissed).ToList()
+            : null;
+        _dialogs.ShowExport(new ExportViewModel(_dialogs, rows, Project.Name, $"{Project.Name} — {View.Label}", riskBriefing: risks));
     }
 
     [RelayCommand(CanExecute = nameof(HasItem))]

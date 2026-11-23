@@ -136,6 +136,13 @@ try
             var view = Enum.Parse<ItemView>(cli.Option("--view") ?? "Inbox", ignoreCase: true);
             var items = store.GetItems(project.Id, view);
             var options = new ExportOptions { ProjectName = project.Name, Title = $"{project.Name} — {view}", Scope = ContentScope.NotesAndExcerpt };
+            if (format == "xlsx")
+            {
+                var file = cli.Option("--out") ?? throw new UsageException("--format xlsx requires --out FILE.xlsx");
+                using (var stream = File.Create(file)) XlsxExporter.WriteItems(items, options, stream);
+                Console.WriteLine($"Wrote {items.Count} items to {Path.GetFullPath(file)}");
+                return 0;
+            }
             var content = format switch
             {
                 "csv" => Exporters.ToCsv(items, options),
@@ -253,7 +260,7 @@ static void PrintHelp() => Console.WriteLine("""
       run-due                                    Run scheduled projects that are due (for Task Scheduler)
       briefing <project>                         Show the latest briefing
       inbox <project> [--view inbox|allmatches|kept|dismissed] [--search TEXT]
-      export <project> [--format md|csv|html|txt] [--view ...] [--out FILE]
+      export <project> [--format md|csv|xlsx|html|txt] [--view ...] [--out FILE]
       backup <file.zip>                          Consistent backup of the database and settings
       cleanup                                    Apply retention now (kept items, notes, collections are never removed)
 

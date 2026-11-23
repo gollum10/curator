@@ -149,14 +149,16 @@ public static class Exporters
         : i.UpdatedUtc is { } u ? $"Updated {u.ToLocalTime():yyyy-MM-dd HH:mm}"
         : $"Publication date unknown (found {i.DiscoveredUtc.ToLocalTime():yyyy-MM-dd HH:mm})";
 
-    private static string Body(ItemRow i, ContentScope scope) => scope switch
+    public static bool IncludesNotes(ContentScope scope) => scope is ContentScope.NotesAndExcerpt or ContentScope.FullText;
+
+    public static string Body(ItemRow i, ContentScope scope) => scope switch
     {
         ContentScope.LinkOnly => "",
         ContentScope.FullText => i.Text.Length > 0 ? i.Text : i.Excerpt,
         _ => i.Excerpt,
     };
 
-    private static string State(ItemRow i) =>
+    public static string State(ItemRow i) =>
         i.IsDismissed ? "dismissed" : i.IsKept ? "kept" : i.IsRead ? "read" : "new";
 
     private static string Iso(DateTimeOffset? d) => d?.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) ?? "";

@@ -13,7 +13,7 @@ and the WPF desktop app are working.
 | `src/NewsDesk.Core` | Domain model, normalization, rule matching, deterministic curation and scoring, schedule calculation. No I/O. |
 | `src/NewsDesk.Connectors` | Hardened HTTP client (public-address guard, size caps), RSS/Atom/RDF parser, feed discovery, feed collector. |
 | `src/NewsDesk.Infrastructure` | SQLite storage (WAL, FTS5 search, migrations) and `NewsDeskEngine`, which runs collection and briefings. |
-| `src/NewsDesk.Exports` | CSV, Markdown, HTML, and plain-text exporters. |
+| `src/NewsDesk.Exports` | Excel (.xlsx, incl. risk workbook with supporting-sources sheet), CSV, Markdown, HTML, and plain-text exporters. |
 | `src/NewsDesk.Worker` | Headless CLI used by Windows Task Scheduler and for source pilots. |
 | `src/NewsDesk.Desktop` | WPF desktop app (`PersonalNewsDesk.exe`). Also runs headless with `--run-due` for the scheduled task. |
 | `tests/NewsDesk.Tests` | xUnit tests, including acceptance scenarios A01–A08 from the design. |
@@ -88,6 +88,6 @@ Every briefing records its rule version, source outcomes, and whether it was com
 
 ## Known gaps / next steps
 
-- Highlights, XLSX export, run history screen.
+- Highlights, run history screen.
 - Narrow-window layout (reader as a separate view) and a guided first-run setup.
 - Large captures are stored in the database for now. The design calls for a managed content folder.

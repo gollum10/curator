@@ -10,7 +10,7 @@ namespace NewsDesk.Desktop.ViewModels;
 
 public sealed record Choice<T>(T Value, string Label);
 
-public enum ExportFormat { Markdown, Html, Csv, PlainText }
+public enum ExportFormat { Markdown, Html, Excel, Csv, PlainText }
 
 /// <summary>Export dialog: choose scope and format, preview, then save locally or copy to the clipboard.</summary>
 public sealed partial class ExportViewModel : ObservableObject
@@ -20,13 +20,17 @@ public sealed partial class ExportViewModel : ObservableObject
     private readonly string _projectName;
 
     private readonly string? _collectionName;
+    private readonly IReadOnlyList<BriefingRow>? _riskBriefing;
 
-    public ExportViewModel(IDialogService dialogs, IReadOnlyList<ItemRow> items, string projectName, string title, string? collectionName = null)
+    /// <param name="riskBriefing">For a distinct-stories briefing: the groups, so Excel export can write one risk per row plus supporting sources.</param>
+    public ExportViewModel(IDialogService dialogs, IReadOnlyList<ItemRow> items, string projectName, string title, string? collectionName = null,
+        IReadOnlyList<BriefingRow>? riskBriefing = null)
     {
         _dialogs = dialogs;
         _items = items;
         _projectName = projectName;
         _collectionName = collectionName;
+        _riskBriefing = riskBriefing;
         Title = title;
         selectedFormat = Formats[0];
         selectedScope = Scopes[2];
@@ -40,7 +44,8 @@ public sealed partial class ExportViewModel : ObservableObject
     public IReadOnlyList<Choice<ExportFormat>> Formats { get; } =
     [
         new(ExportFormat.Markdown, "Markdown (.md)"), new(ExportFormat.Html, "HTML page (.html)"),
-        new(ExportFormat.Csv, "Spreadsheet (.csv)"), new(ExportFormat.PlainText, "Plain text (.txt)"),
+        new(ExportFormat.Excel, "Excel workbook (.xlsx)"), new(ExportFormat.Csv, "CSV spreadsheet (.csv)"),
+        new(ExportFormat.PlainText, "Plain text (.txt)"),
     ];
 
     public IReadOnlyList<Choice<ContentScope>> Scopes { get; } =
@@ -69,9 +74,34 @@ public sealed partial class ExportViewModel : ObservableObject
 
     private void UpdatePreview()
     {
-        var text = Render(SelectedFormat.Value);
+        var text = SelectedFormat.Value == ExportFormat.Excel ? ExcelPreview() : Render(SelectedFormat.Value);
         Preview = text.Length > 20000 ? text[..20000] + "\n…" : text;
         Status = "";
+    }
+
+    private string ExcelPreview()
+    {
+        var sb = new StringBuilder();
+        if (_riskBriefing is { Count: > 0 } risks)
+        {
+            var supporting = risks.Sum(r => r.Supporting.Count + 1);
+            sb.AppendLine($"Excel workbook with two sheets:");
+            sb.AppendLine($"  • Risks — {risks.Count} row(s), one per distinct risk");
+            sb.AppendLine($"  • Supporting sources — {supporting} row(s): each lead and supporting report, traceable by rank");
+            sb.AppendLine();
+            foreach (var r in risks)
+                sb.AppendLine($"{r.Rank}. {r.Lead.Title}  [{r.GroupKey?.Replace(",", ", ") ?? "no identifiers"}]  +{r.Supporting.Count} supporting");
+        }
+        else
+        {
+            sb.AppendLine($"Excel workbook, sheet “Articles” — {_items.Count} row(s), one per article.");
+            sb.AppendLine("Columns: Project, Collection, Title, Publisher, URL (clickable), Published, Captured, Coverage, Tags, Summary or excerpt, Notes, State.");
+            sb.AppendLine();
+            foreach (var i in _items.Take(50)) sb.AppendLine($"• {i.Title}  —  {i.SourceTitle}");
+        }
+        sb.AppendLine();
+        sb.AppendLine("Text that looks like a spreadsheet formula is stored as plain text and never runs.");
+        return sb.ToString();
     }
 
     [RelayCommand]
@@ -79,6 +109,7 @@ public sealed partial class ExportViewModel : ObservableObject
     {
         var (ext, filter) = SelectedFormat.Value switch
         {
+            ExportFormat.Excel => (".xlsx", "Excel workbook|*.xlsx"),
             ExportFormat.Html => (".html", "HTML page|*.html"),
             ExportFormat.Csv => (".csv", "CSV spreadsheet|*.csv"),
             ExportFormat.PlainText => (".txt", "Text file|*.txt"),
@@ -88,9 +119,25 @@ public sealed partial class ExportViewModel : ObservableObject
         if (safeName.Length > 80) safeName = safeName[..80];
         var path = _dialogs.SaveFile(safeName + ext, filter);
         if (path is null) return;
-        // CSV gets a BOM so Excel detects UTF-8; other formats do not need one.
-        File.WriteAllText(path, Render(SelectedFormat.Value), new UTF8Encoding(SelectedFormat.Value == ExportFormat.Csv));
-        Status = $"Saved {CountLabel} to {path}";
+        try
+        {
+            if (SelectedFormat.Value == ExportFormat.Excel)
+            {
+                using var file = File.Create(path);
+                if (_riskBriefing is { Count: > 0 } risks) XlsxExporter.WriteBriefing(risks, Options, file);
+                else XlsxExporter.WriteItems(_items, Options, file);
+            }
+            else
+            {
+                // CSV gets a BOM so Excel detects UTF-8; other formats do not need one.
+                File.WriteAllText(path, Render(SelectedFormat.Value), new UTF8Encoding(SelectedFormat.Value == ExportFormat.Csv));
+            }
+            Status = $"Saved {CountLabel} to {path}";
+        }
+        catch (IOException ex)
+        {
+            Status = $"Could not save: {ex.Message} (Is the file open in another program?)";
+        }
     }
 
     [RelayCommand]
