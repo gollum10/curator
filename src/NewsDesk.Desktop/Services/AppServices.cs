@@ -10,7 +10,12 @@ namespace NewsDesk.Desktop.Services;
 /// <summary>Composition root shared by the UI and the headless scheduled run.</summary>
 public sealed class AppServices : IDisposable
 {
+    /// <summary>Held by whoever is collecting or restoring, so the scheduled task and the app never collide.</summary>
+    public const string WorkerMutexName = @"Local\PersonalNewsDesk.Worker";
+
     public string DataDirectory { get; }
+    public string SettingsPath => Path.Combine(DataDirectory, "settings.json");
+    public string BackupFolder => Path.Combine(DataDirectory, "backups");
     public NewsDeskStore Store { get; }
     public NewsDeskEngine Engine { get; }
     public FeedDiscovery Discovery { get; }

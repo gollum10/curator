@@ -26,14 +26,35 @@ public partial class App : Application
 
         DispatcherUnhandledException += OnUnhandledException;
         ThemeManager.Apply(_services.Settings.DarkTheme);
-        var window = new MainWindow { DataContext = new MainViewModel(_services) };
+        var window = new MainWindow { DataContext = new MainViewModel(_services, restart: Restart) };
         MainWindow = window;
         window.Show();
+        _ = Task.Run(() => RunMaintenance(_services));
+    }
+
+    private static void RunMaintenance(AppServices services)
+    {
+        try
+        {
+            if (services.Engine.RunMaintenanceIfDue(services.BackupFolder, services.SettingsPath) is { } done)
+                services.Log("maintenance: " + done);
+        }
+        catch (Exception ex)
+        {
+            services.Log($"maintenance failed: {ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Starts a fresh instance and exits this one (used after restoring a backup).</summary>
+    private void Restart()
+    {
+        if (Environment.ProcessPath is { } exe) System.Diagnostics.Process.Start(exe);
+        Shutdown();
     }
 
     private static async Task RunDueHeadlessAsync(AppServices services)
     {
-        using var mutex = new Mutex(false, @"Local\PersonalNewsDesk.Worker");
+        using var mutex = new Mutex(false, AppServices.WorkerMutexName);
         if (!mutex.WaitOne(0)) return;
         try
         {
@@ -41,6 +62,7 @@ public partial class App : Application
             var reports = await Task.Run(() => services.Engine.RunDueAsync(cts.Token));
             foreach (var r in reports)
                 services.Log($"scheduled run {r.Run.Trigger}: {r.Run.Status} — {r.Run.Summary}");
+            RunMaintenance(services);
         }
         catch (Exception ex)
         {

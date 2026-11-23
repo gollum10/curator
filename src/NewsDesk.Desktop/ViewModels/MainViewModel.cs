@@ -32,9 +32,12 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly AppServices _s;
     private bool _suppressNav;
 
-    public MainViewModel(AppServices services, IDialogService? dialogs = null)
+    private readonly Action _restart;
+
+    public MainViewModel(AppServices services, IDialogService? dialogs = null, Action? restart = null)
     {
         _s = services;
+        _restart = restart ?? (() => { });
         Dialogs = dialogs ?? new Views.DialogService();
         backgroundEnabled = SafeIsBackgroundEnabled();
         ReloadProjects();
@@ -210,7 +213,13 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenDataFolder() => System.Diagnostics.Process.Start("explorer.exe", $"\"{_s.DataDirectory}\"");
+    private void ShowData()
+    {
+        (CurrentPage as ProjectViewModel)?.Flush();
+        Dialogs.ShowData(new DataViewModel(_s, Dialogs, _restart));
+        if (CurrentPage is ProjectViewModel pvm) { pvm.Load(); ReloadProjects(pvm.Project.Id); }
+        else ReloadProjects();
+    }
 
     private static bool SafeIsBackgroundEnabled()
     {

@@ -5,6 +5,8 @@ public interface IDialogService
     bool EditProject(ProjectEditorViewModel editor);
     void ShowExport(ExportViewModel export);
     string? SaveFile(string defaultName, string filter);
+    string? OpenFile(string filter);
+    void ShowData(DataViewModel data);
     bool Confirm(string message, string title);
     void Info(string message);
     /// <summary>Asks for a line of text. Returns null if cancelled.</summary>

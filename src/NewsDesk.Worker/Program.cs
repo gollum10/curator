@@ -103,6 +103,9 @@ try
             {
                 var reports = await engine.RunDueAsync(cts.Token, progress);
                 Console.WriteLine(reports.Count == 0 ? "No projects due." : $"{reports.Count} project run(s) completed.");
+                var dataDir = Path.GetDirectoryName(Path.GetFullPath(db.Path))!;
+                if (engine.RunMaintenanceIfDue(Path.Combine(dataDir, "backups"), Path.Combine(dataDir, "settings.json")) is { } done)
+                    Console.WriteLine("Maintenance: " + done);
             }
             finally { mutex.ReleaseMutex(); }
             return 0;
@@ -150,6 +153,19 @@ try
             }
             return 0;
         }
+
+        case "backup":
+        {
+            var output = cli.Positional(0) ?? throw new UsageException("backup <file.zip>");
+            var dataDir = Path.GetDirectoryName(Path.GetFullPath(db.Path))!;
+            var manifest = NewsDesk.Infrastructure.Maintenance.BackupService.Create(db, Path.GetFullPath(output), Path.Combine(dataDir, "settings.json"));
+            Console.WriteLine($"Backup written to {Path.GetFullPath(output)} ({manifest.Projects} projects, {manifest.Articles} articles).");
+            return 0;
+        }
+
+        case "cleanup":
+            Console.WriteLine(store.ApplyRetention(DateTimeOffset.UtcNow).Describe());
+            return 0;
 
         default:
             throw new UsageException($"Unknown command '{cli.Command}'.");
@@ -238,6 +254,8 @@ static void PrintHelp() => Console.WriteLine("""
       briefing <project>                         Show the latest briefing
       inbox <project> [--view inbox|allmatches|kept|dismissed] [--search TEXT]
       export <project> [--format md|csv|html|txt] [--view ...] [--out FILE]
+      backup <file.zip>                          Consistent backup of the database and settings
+      cleanup                                    Apply retention now (kept items, notes, collections are never removed)
 
       --db PATH   Use a specific database (default: %LOCALAPPDATA%\PersonalNewsDesk\newsdesk.db)
     """);

@@ -61,6 +61,8 @@ public sealed class Database
             q.CommandText = "SELECT COALESCE(MAX(version), 0) FROM schema_version;";
             current = (long)q.ExecuteScalar()!;
         }
+        if (current > Migrations.Length)
+            throw new InvalidOperationException($"This database was created by a newer version of the app (schema {current}; this build supports {Migrations.Length}).");
         for (var v = (int)current; v < Migrations.Length; v++)
         {
             using var tx = c.BeginTransaction();
@@ -217,5 +219,29 @@ public sealed class Database
         );
         CREATE VIRTUAL TABLE article_fts USING fts5 (article_id UNINDEXED, title, text, tokenize = 'unicode61 remove_diacritics 2');
         """,
+        // v2: retention support
+        """
+        CREATE TABLE article_tombstones (
+            source_id TEXT NOT NULL,
+            identity TEXT NOT NULL,
+            deleted_utc TEXT NOT NULL,
+            PRIMARY KEY (source_id, identity)
+        );
+        CREATE TABLE app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        CREATE INDEX ix_project_items_first ON project_items (project_id, first_matched_utc);
+        CREATE INDEX ix_briefing_article ON briefing_entries (article_id);
+        CREATE INDEX ix_collection_items_article ON collection_items (article_id);
+        """,
     ];
+
+    /// <summary>Schema version this build creates and understands.</summary>
+    public static int SchemaVersion => Migrations.Length;
+
+    public int CurrentVersion()
+    {
+        using var c = Open();
+        using var q = c.CreateCommand();
+        q.CommandText = "SELECT COALESCE(MAX(version), 0) FROM schema_version;";
+        return Convert.ToInt32(q.ExecuteScalar());
+    }
 }

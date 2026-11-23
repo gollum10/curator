@@ -21,6 +21,15 @@ public sealed class DialogService : IDialogService
         return dialog.ShowDialog(Owner) == true ? dialog.FileName : null;
     }
 
+    public string? OpenFile(string filter)
+    {
+        var dialog = new OpenFileDialog { Filter = filter, CheckFileExists = true, Multiselect = false };
+        return dialog.ShowDialog(Owner) == true ? dialog.FileName : null;
+    }
+
+    public void ShowData(DataViewModel data) =>
+        new DataWindow { DataContext = data, Owner = Owner }.ShowDialog();
+
     public bool Confirm(string message, string title) =>
         MessageBox.Show(Owner!, message, title, MessageBoxButton.OKCancel, MessageBoxImage.Question, MessageBoxResult.Cancel) == MessageBoxResult.OK;
 

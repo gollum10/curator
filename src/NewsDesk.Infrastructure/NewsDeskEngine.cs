@@ -220,6 +220,21 @@ public sealed class NewsDeskEngine(NewsDeskStore store, IEnumerable<ISourceColle
         return new SourceOutcome(source.Id, source.Title, result.Outcome.ToString(), stats.New, stats.Updated, result.Error, source.LastSuccessUtc, warnings);
     }
 
+    /// <summary>
+    /// Weekly automatic backup (first, so cleanup is always recoverable), then retention at most once a day.
+    /// Returns a short description of what was done, or null if nothing was due.
+    /// </summary>
+    public string? RunMaintenanceIfDue(string backupFolder, string? settingsPath)
+    {
+        var now = _clock.GetUtcNow();
+        var parts = new List<string>();
+        if (Maintenance.BackupService.AutoBackupIfDue(store, store.Database, backupFolder, settingsPath, now) is { } path)
+            parts.Add($"automatic backup saved to {path}");
+        if (store.GetMetaTime("last_retention_utc") is not { } last || now - last >= TimeSpan.FromHours(20))
+            parts.Add("cleanup: " + store.ApplyRetention(now).Describe());
+        return parts.Count == 0 ? null : string.Join("; ", parts);
+    }
+
     private static SourceOutcome Outcome(Source s, string outcome, string? error) =>
         new(s.Id, s.Title, outcome, 0, 0, error, s.LastSuccessUtc, []);
 

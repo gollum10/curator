@@ -126,7 +126,7 @@
                     <Button Style="{StaticResource ToolButton}" HorizontalContentAlignment="Left" BorderThickness="0" Margin="0,1"
                             Command="{Binding ToggleThemeCommand}" Content="{Binding ThemeLabel}" />
                     <Button Style="{StaticResource ToolButton}" HorizontalContentAlignment="Left" BorderThickness="0" Margin="0,1"
-                            Command="{Binding OpenDataFolderCommand}" Content="🗀  Data folder" ToolTip="Open the folder that holds your local database and logs" />
+                            Command="{Binding ShowDataCommand}" Content="🗀  Data and backup" ToolTip="Storage, cleanup, backup and restore" />
                 </StackPanel>
 
                 <ListBox ItemsSource="{Binding Projects}" SelectedItem="{Binding SelectedProject}" BorderThickness="0" Background="Transparent"

@@ -71,6 +71,13 @@ Data lives in `%LOCALAPPDATA%\PersonalNewsDesk\newsdesk.db` (override with `--db
 
 Every briefing records its rule version, source outcomes, and whether it was complete, partial, or failed.
 
+## Data, cleanup and backups
+
+- Cleanup runs once a day: unreviewed items older than the project's retention period and briefings beyond the latest ten
+  are removed. Kept items, notes, tags, collections and dismissals are never removed.
+- A backup is a .zip with a consistent database snapshot, settings and a manifest. A weekly automatic backup (last four kept)
+  goes to the `backups` folder; restoring validates the file and saves the current data first.
+
 ## Security notes
 
 - Only http/https. DNS is re-checked for every connection, including redirects; loopback, private, link-local, and
@@ -81,6 +88,6 @@ Every briefing records its rule version, source outcomes, and whether it was com
 
 ## Known gaps / next steps
 
-- Highlights, XLSX export, retention cleanup, backup/restore, run history screen.
+- Highlights, XLSX export, run history screen.
 - Narrow-window layout (reader as a separate view) and a guided first-run setup.
 - Large captures are stored in the database for now. The design calls for a managed content folder.

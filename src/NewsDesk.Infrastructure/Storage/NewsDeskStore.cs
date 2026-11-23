@@ -10,6 +10,8 @@ namespace NewsDesk.Infrastructure.Storage;
 /// <summary>All persistence. Each public method is one short transaction so the UI and worker can share the database.</summary>
 public sealed class NewsDeskStore(Database db)
 {
+    public Database Database => db;
+
     // ---------------------------------------------------------------- projects
 
     public Project CreateProject(Project project, ProjectRules rules, DateTimeOffset nowUtc)
@@ -186,6 +188,11 @@ public sealed class NewsDeskStore(Database db)
 
             if (existing.Count == 0)
             {
+                // Removed by retention: don't bring it back as if it were new.
+                var tomb = c.Query("SELECT 1 AS x FROM article_tombstones WHERE source_id = $s AND identity = $id", r => true, tx,
+                    ("$s", sourceId), ("$id", Identity(item.PublisherId, item.CanonicalUrl)));
+                if (tomb.Count > 0) { skipped++; continue; }
+
                 var articleId = Guid.NewGuid();
                 var revisionId = Guid.NewGuid();
                 c.Exec("""
@@ -377,6 +384,107 @@ public sealed class NewsDeskStore(Database db)
                 SELECT $id, $p, $a, current_revision_id, 'note', $t, $now, $now FROM articles WHERE id = $a
                 """, tx, ("$id", Guid.NewGuid()), ("$p", projectId), ("$a", articleId), ("$t", text), ("$now", nowUtc));
         tx.Commit();
+    }
+
+    private static string Identity(string? publisherId, string canonicalUrl) =>
+        publisherId is not null ? "pid:" + publisherId : "url:" + canonicalUrl;
+
+    // ---------------------------------------------------------------- retention
+
+    public const int MinimumArticleAgeDays = 30;
+    public const int KeepRecentRunsPerProject = 10;
+    public const int TombstoneDays = 365;
+
+    /// <summary>
+    /// Applies retention in one transaction:
+    /// 1. Project items older than the project's retention period are removed unless kept, dismissed, annotated, tagged,
+    ///    or in a collection. Dismissed items stay so unchanged content remains hidden.
+    /// 2. Briefings older than the retention period are removed, except each project's most recent ten.
+    /// 3. Stored articles that no project or retained briefing references are removed once older than the longest
+    ///    retention period (at least 30 days). A small identity record prevents them being re-added as new.
+    /// Kept items, notes, tags, and collections are never removed.
+    /// </summary>
+    public RetentionStats ApplyRetention(DateTimeOffset nowUtc)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        var items = 0;
+        var runs = 0;
+        var projects = c.Query("SELECT id, retention_days FROM projects", r => (Id: r.G("id"), Days: Math.Max(1, r.I("retention_days"))), tx);
+        foreach (var (id, days) in projects)
+        {
+            var cutoff = nowUtc.AddDays(-days);
+            items += c.Exec("""
+                DELETE FROM project_items
+                WHERE project_id = $p AND is_kept = 0 AND is_dismissed = 0 AND first_matched_utc < $cutoff
+                  AND article_id IN (SELECT id FROM articles WHERE COALESCE(published_utc, updated_utc, discovered_utc) < $cutoff)
+                  AND NOT EXISTS (SELECT 1 FROM annotations n WHERE n.project_id = project_items.project_id AND n.article_id = project_items.article_id)
+                  AND NOT EXISTS (SELECT 1 FROM project_item_tags t WHERE t.project_id = project_items.project_id AND t.article_id = project_items.article_id)
+                  AND NOT EXISTS (SELECT 1 FROM collection_items ci JOIN collections col ON col.id = ci.collection_id
+                                  WHERE col.project_id = project_items.project_id AND ci.article_id = project_items.article_id)
+                """, tx, ("$p", id), ("$cutoff", cutoff));
+
+            runs += c.Exec("""
+                DELETE FROM runs WHERE project_id = $p AND started_utc < $cutoff
+                  AND id NOT IN (SELECT id FROM runs WHERE project_id = $p ORDER BY started_utc DESC LIMIT $keep)
+                """, tx, ("$p", id), ("$cutoff", nowUtc.AddDays(-Math.Max(days, MinimumArticleAgeDays))), ("$keep", KeepRecentRunsPerProject));
+        }
+
+        var articleDays = Math.Max(MinimumArticleAgeDays, projects.Count == 0 ? 0 : projects.Max(p => p.Days));
+        const string orphanFilter = """
+            discovered_utc < $cutoff
+            AND NOT EXISTS (SELECT 1 FROM project_items pi WHERE pi.article_id = articles.id)
+            AND NOT EXISTS (SELECT 1 FROM briefing_entries be WHERE be.article_id = articles.id)
+            AND NOT EXISTS (SELECT 1 FROM collection_items ci WHERE ci.article_id = articles.id)
+            AND NOT EXISTS (SELECT 1 FROM annotations n WHERE n.article_id = articles.id)
+            """;
+        var articleCutoff = nowUtc.AddDays(-articleDays);
+        c.Exec($"""
+            INSERT OR REPLACE INTO article_tombstones (source_id, identity, deleted_utc)
+            SELECT source_id, CASE WHEN publisher_id IS NOT NULL THEN 'pid:' || publisher_id ELSE 'url:' || canonical_url END, $now
+            FROM articles WHERE {orphanFilter}
+            """, tx, ("$cutoff", articleCutoff), ("$now", nowUtc));
+        c.Exec($"DELETE FROM article_fts WHERE article_id IN (SELECT id FROM articles WHERE {orphanFilter})", tx, ("$cutoff", articleCutoff));
+        var articles = c.Exec($"DELETE FROM articles WHERE {orphanFilter}", tx, ("$cutoff", articleCutoff));
+        var tombs = c.Exec("DELETE FROM article_tombstones WHERE deleted_utc < $t", tx, ("$t", nowUtc.AddDays(-TombstoneDays)));
+
+        SetMeta(c, tx, "last_retention_utc", Iso(nowUtc)!);
+        tx.Commit();
+        return new RetentionStats(items, articles, runs, tombs);
+    }
+
+    // ---------------------------------------------------------------- app metadata and storage
+
+    public string? GetMeta(string key)
+    {
+        using var c = db.Open();
+        return c.Query("SELECT value FROM app_meta WHERE key = $k", r => r.S("value"), null, ("$k", key)).SingleOrDefault();
+    }
+
+    public void SetMeta(string key, string value)
+    {
+        using var c = db.Open();
+        SetMeta(c, null, key, value);
+    }
+
+    private static void SetMeta(SqliteConnection c, SqliteTransaction? tx, string key, string value) =>
+        c.Exec("INSERT INTO app_meta (key, value) VALUES ($k, $v) ON CONFLICT (key) DO UPDATE SET value = excluded.value", tx, ("$k", key), ("$v", value));
+
+    public DateTimeOffset? GetMetaTime(string key) =>
+        GetMeta(key) is { } v && DateTimeOffset.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.RoundtripKind, out var d) ? d : null;
+
+    public StorageStats GetStorageStats()
+    {
+        using var c = db.Open();
+        var stats = c.Query("""
+            SELECT (SELECT COUNT(*) FROM projects) AS projects, (SELECT COUNT(*) FROM sources) AS sources,
+                   (SELECT COUNT(*) FROM articles) AS articles, (SELECT COUNT(*) FROM project_items WHERE is_kept = 1) AS kept,
+                   (SELECT COUNT(*) FROM collections) AS collections, (SELECT COUNT(*) FROM annotations) AS notes
+            """, r => (r.I("projects"), r.I("sources"), r.I("articles"), r.I("kept"), r.I("collections"), r.I("notes"))).Single();
+        long bytes = 0;
+        foreach (var suffix in new[] { "", "-wal" })
+            if (File.Exists(db.Path + suffix)) bytes += new FileInfo(db.Path + suffix).Length;
+        return new StorageStats(stats.Item1, stats.Item2, stats.Item3, stats.Item4, stats.Item5, stats.Item6, bytes);
     }
 
     // ---------------------------------------------------------------- collections
