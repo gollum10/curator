@@ -711,7 +711,7 @@ public sealed partial class ProjectViewModel : ObservableObject
     private void AddFeed(FeedOptionViewModel? option)
     {
         if (option is null) return;
-        var source = _s.Store.GetOrAddSource(option.FeedUrl, option.Feed.Title, option.Feed.SiteUrl);
+        var source = _s.Store.GetOrAddSource(option.FeedUrl, option.Feed.Title, option.Feed.SiteUrl, option.Feed.Connector);
         _s.Store.Subscribe(new ProjectSource(Project.Id, source.Id));
         DiscoveredFeeds.Clear();
         NewSourceUrl = "";

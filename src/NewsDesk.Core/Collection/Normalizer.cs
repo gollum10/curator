@@ -16,6 +16,7 @@ public sealed record NormalizedItem
     public CaptureLevel CaptureLevel { get; init; }
     public string Excerpt { get; init; } = "";
     public string Text { get; init; } = "";
+    public string? StructuredJson { get; init; }
 }
 
 public static class Normalizer
@@ -32,7 +33,7 @@ public static class Normalizer
         var content = TextUtil.HtmlToText(raw.ContentHtml);
         var text = content.Length > summary.Length ? content : summary;
         var level = text.Length == 0 ? CaptureLevel.LinkOnly
-            : content.Length >= FullTextThreshold && content.Length >= summary.Length ? CaptureLevel.FullText
+            : raw.IsCompleteRecord || (content.Length >= FullTextThreshold && content.Length >= summary.Length) ? CaptureLevel.FullText
             : CaptureLevel.Excerpt;
 
         return new NormalizedItem
@@ -47,6 +48,7 @@ public static class Normalizer
             CaptureLevel = level,
             Excerpt = TextUtil.Excerpt(summary.Length > 0 ? summary : content),
             Text = text,
+            StructuredJson = raw.StructuredJson,
         };
     }
 }

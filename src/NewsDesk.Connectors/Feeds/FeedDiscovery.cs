@@ -6,7 +6,7 @@ using NewsDesk.Core.Text;
 
 namespace NewsDesk.Connectors.Feeds;
 
-public sealed record DiscoveredFeed(string FeedUrl, string? Title, string? SiteUrl, IReadOnlyList<RawItem> Preview);
+public sealed record DiscoveredFeed(string FeedUrl, string? Title, string? SiteUrl, IReadOnlyList<RawItem> Preview, string Connector = "feed");
 
 public sealed record DiscoveryResult(IReadOnlyList<DiscoveredFeed> Feeds, string Message);
 
@@ -29,6 +29,28 @@ public sealed partial class FeedDiscovery(SafeHttp http)
         if (!input.Contains("://", StringComparison.Ordinal)) input = "https://" + input.Trim();
         if (!Uri.TryCreate(input.Trim(), UriKind.Absolute, out var uri) || !SafeHttp.IsAllowedScheme(uri))
             return new([], "Enter an http or https website or feed address.");
+
+        // CISA's exploited-vulnerability catalog is structured data with its own connector.
+        if (Kev.KevCollector.IsKevUrl(uri))
+        {
+            try
+            {
+                var kev = await http.GetAsync(new Uri(Kev.KevCollector.CatalogUrl), null, null, ct);
+                if ((int)kev.Status < 400 && !kev.Truncated)
+                {
+                    var catalog = Kev.KevCollector.Parse(kev.Body, DateTimeOffset.UtcNow);
+                    var feed = new DiscoveredFeed(Kev.KevCollector.CatalogUrl, "CISA Known Exploited Vulnerabilities", Kev.KevCollector.CatalogPage,
+                        catalog.Items.Take(10).ToList(), Kev.KevCollector.ConnectorName);
+                    return new([feed], $"CISA KEV catalog (structured data, version {catalog.Version}): exploited vulnerabilities with patch deadlines. " +
+                                       "Used as confirmed exploitation evidence.");
+                }
+                return new([], $"The CISA KEV catalog returned HTTP {(int)kev.Status}.");
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or System.Text.Json.JsonException && !ct.IsCancellationRequested)
+            {
+                return new([], "Could not read the CISA KEV catalog: " + ex.Message);
+            }
+        }
 
         FetchResponse page;
         try { page = await http.GetAsync(uri, null, null, ct); }

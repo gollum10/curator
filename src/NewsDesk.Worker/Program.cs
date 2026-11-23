@@ -14,7 +14,7 @@ if (cli.Command is null or "help" or "--help" or "-h") { PrintHelp(); return 0; 
 var db = new Database(cli.Option("--db") ?? Database.DefaultPath());
 var store = new NewsDeskStore(db);
 using var http = new SafeHttp();
-var engine = new NewsDeskEngine(store, [new FeedCollector(http)]);
+var engine = new NewsDeskEngine(store, [new FeedCollector(http), new NewsDesk.Connectors.Kev.KevCollector(http)]);
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 var progress = new Progress<string>(m => Console.Error.WriteLine("  " + m));
@@ -64,7 +64,7 @@ try
                 Console.WriteLine("Using feed 1. Pass --pick N to choose another.");
             }
             var feed = discovery.Feeds[Math.Clamp(pick, 1, discovery.Feeds.Count) - 1];
-            var source = store.GetOrAddSource(feed.FeedUrl, feed.Title, feed.SiteUrl);
+            var source = store.GetOrAddSource(feed.FeedUrl, feed.Title, feed.SiteUrl, feed.Connector);
             store.Subscribe(new ProjectSource(project.Id, source.Id, int.Parse(cli.Option("--priority") ?? "50"), cli.Flag("--primary")));
             Console.WriteLine($"Subscribed '{project.Name}' to {source.Title} ({source.FeedUrl}).");
             Console.WriteLine("Recent entries:");

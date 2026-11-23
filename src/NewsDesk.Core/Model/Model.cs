@@ -99,6 +99,8 @@ public sealed class ArticleRevision
     public string Excerpt { get; init; } = "";
     public string Text { get; init; } = "";
     public DateTimeOffset CapturedUtc { get; init; }
+    /// <summary>Structured source fields (JSON) when the source is structured, e.g. a CISA KEV record.</summary>
+    public string? StructuredJson { get; init; }
 }
 
 /// <summary>Per-project decisions about an article. Project ID + Article ID is unique.</summary>

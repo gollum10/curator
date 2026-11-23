@@ -232,6 +232,10 @@ public sealed class Database
         CREATE INDEX ix_briefing_article ON briefing_entries (article_id);
         CREATE INDEX ix_collection_items_article ON collection_items (article_id);
         """,
+        // v3: structured records (e.g. CISA KEV fields) kept alongside the text, with field-level provenance
+        """
+        ALTER TABLE article_revisions ADD COLUMN structured_json TEXT;
+        """,
     ];
 
     /// <summary>Schema version this build creates and understands.</summary>

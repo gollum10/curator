@@ -105,13 +105,13 @@ public sealed class NewsDeskStore(Database db)
 
     // ---------------------------------------------------------------- sources
 
-    public Source GetOrAddSource(string feedUrl, string? title, string? siteUrl)
+    public Source GetOrAddSource(string feedUrl, string? title, string? siteUrl, string connector = "feed")
     {
         using var c = db.Open();
         using var tx = c.BeginTransaction();
         var existing = c.Query("SELECT * FROM sources WHERE feed_url = $u", MapSource, tx, ("$u", feedUrl)).SingleOrDefault();
         if (existing is not null) { tx.Commit(); return existing; }
-        var s = new Source { FeedUrl = feedUrl, Title = title ?? new Uri(feedUrl).Host, SiteUrl = siteUrl };
+        var s = new Source { FeedUrl = feedUrl, Title = title ?? new Uri(feedUrl).Host, SiteUrl = siteUrl, Connector = connector };
         c.Exec("INSERT INTO sources (id, feed_url, site_url, title, connector, health) VALUES ($id, $u, $site, $t, $conn, $h)", tx,
             ("$id", s.Id), ("$u", s.FeedUrl), ("$site", s.SiteUrl), ("$t", s.Title), ("$conn", s.Connector), ("$h", s.Health));
         tx.Commit();
@@ -223,10 +223,10 @@ public sealed class NewsDeskStore(Database db)
     private static void InsertRevision(SqliteConnection c, SqliteTransaction tx, Guid articleId, Guid revisionId, NormalizedItem item, DateTimeOffset now)
     {
         c.Exec("""
-            INSERT INTO article_revisions (id, article_id, content_hash, capture_level, excerpt, text, captured_utc)
-            VALUES ($id, $a, $h, $lvl, $ex, $txt, $now)
+            INSERT INTO article_revisions (id, article_id, content_hash, capture_level, excerpt, text, captured_utc, structured_json)
+            VALUES ($id, $a, $h, $lvl, $ex, $txt, $now, $json)
             """, tx, ("$id", revisionId), ("$a", articleId), ("$h", item.ContentHash), ("$lvl", item.CaptureLevel), ("$ex", item.Excerpt),
-            ("$txt", item.Text), ("$now", now));
+            ("$txt", item.Text), ("$now", now), ("$json", item.StructuredJson));
         c.Exec("DELETE FROM article_fts WHERE article_id = $a", tx, ("$a", articleId));
         c.Exec("INSERT INTO article_fts (article_id, title, text) VALUES ($a, $t, $x)", tx, ("$a", articleId), ("$t", item.Title), ("$x", item.Text));
     }
@@ -237,13 +237,14 @@ public sealed class NewsDeskStore(Database db)
         using var c = db.Open();
         return c.Query("""
             SELECT a.id, a.source_id, a.publisher_id, a.url, a.canonical_url, a.title, a.published_utc, a.updated_utc, a.discovered_utc, a.current_revision_id,
-                   r.content_hash, r.capture_level, r.excerpt, r.text, r.captured_utc,
-                   ps.priority, ps.is_primary,
+                   r.content_hash, r.capture_level, r.excerpt, r.text, r.captured_utc, r.structured_json,
+                   ps.priority, ps.is_primary, src.connector,
                    pi.article_id AS pi_article, pi.is_read, pi.is_kept, pi.is_dismissed, pi.dismissed_hash, pi.in_inbox, pi.last_delivered_hash,
                    pi.match_reason, pi.score, pi.first_matched_utc
             FROM project_sources ps
             JOIN articles a ON a.source_id = ps.source_id
             JOIN article_revisions r ON r.id = a.current_revision_id
+            JOIN sources src ON src.id = a.source_id
             LEFT JOIN project_items pi ON pi.project_id = ps.project_id AND pi.article_id = a.id
             WHERE ps.project_id = $p AND COALESCE(a.published_utc, a.updated_utc, a.discovered_utc) >= $since
             """, r =>
@@ -260,10 +261,11 @@ public sealed class NewsDeskStore(Database db)
                 Revision = new ArticleRevision
                 {
                     Id = article.CurrentRevisionId, ArticleId = article.Id, ContentHash = r.S("content_hash"), CaptureLevel = r.E<CaptureLevel>("capture_level"),
-                    Excerpt = r.S("excerpt"), Text = r.S("text"), CapturedUtc = r.D("captured_utc"),
+                    Excerpt = r.S("excerpt"), Text = r.S("text"), CapturedUtc = r.D("captured_utc"), StructuredJson = r.NS("structured_json"),
                 },
                 SourcePriority = r.I("priority"),
                 SourceIsPrimary = r.B("is_primary"),
+                SourceConnector = r.S("connector"),
                 State = r.NS("pi_article") is null ? null : new ProjectItem
                 {
                     ProjectId = projectId, ArticleId = article.Id, IsRead = r.B("is_read"), IsKept = r.B("is_kept"), IsDismissed = r.B("is_dismissed"),
@@ -727,7 +729,7 @@ public sealed class NewsDeskStore(Database db)
                 c.Exec("""
                     INSERT INTO briefing_entries (run_id, rank, article_id, group_key, score, reason, components_json, supporting_json)
                     VALUES ($run, $rank, $a, $g, $score, $reason, $comp, $sup)
-                    """, tx, ("$run", runId), ("$rank", s.Rank), ("$a", s.Lead.Candidate.Article.Id), ("$g", s.GroupKey), ("$score", s.Lead.Score.Total),
+                    """, tx, ("$run", runId), ("$rank", s.Rank), ("$a", s.Lead.Candidate.Article.Id), ("$g", s.GroupKey), ("$score", s.GroupScore),
                     ("$reason", s.Reason), ("$comp", JsonSerializer.Serialize(s.Lead.Score, Json)),
                     ("$sup", JsonSerializer.Serialize(s.Supporting.Select(x => x.Candidate.Article.Id), Json)));
             }

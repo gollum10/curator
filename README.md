@@ -11,7 +11,7 @@ highlights, exports, cleanup and backup, a command-line worker, and the WPF desk
 | Project | Purpose |
 |---|---|
 | `src/NewsDesk.Core` | Domain model, normalization, rule matching, deterministic curation and scoring, schedule calculation. No I/O. |
-| `src/NewsDesk.Connectors` | Hardened HTTP client (public-address guard, size caps), RSS/Atom/RDF parser, feed discovery, feed collector. |
+| `src/NewsDesk.Connectors` | Hardened HTTP client (public-address guard, size caps), RSS/Atom/RDF parser, feed discovery, feed collector, CISA KEV connector. |
 | `src/NewsDesk.Infrastructure` | SQLite storage (WAL, FTS5 search, migrations) and `NewsDeskEngine`, which runs collection and briefings. |
 | `src/NewsDesk.Exports` | Excel (.xlsx, incl. risk workbook with supporting-sources sheet), CSV, Markdown, HTML, and plain-text exporters. |
 | `src/NewsDesk.Worker` | Headless CLI used by Windows Task Scheduler and for source pilots. |
@@ -88,6 +88,6 @@ Every briefing records its rule version, source outcomes, and whether it was com
 
 ## Known gaps / next steps
 
-- Design phase 3: website extraction templates, structured advisory connectors (CISA KEV), optional AI summaries.
+- Design phase 3 (remaining): website extraction templates, technology-profile risk scoring, optional AI summaries.
 - Narrow-window layout (reader as a separate view) and a guided first-run setup.
 - Large captures are stored in the database for now. The design calls for a managed content folder.

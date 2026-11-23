@@ -28,7 +28,7 @@ public sealed class AppServices : IDisposable
         DataDirectory = Path.GetDirectoryName(dbPath)!;
         Store = new NewsDeskStore(new Database(dbPath));
         _http = new SafeHttp();
-        Engine = new NewsDeskEngine(Store, [new FeedCollector(_http)]);
+        Engine = new NewsDeskEngine(Store, [new FeedCollector(_http), new NewsDesk.Connectors.Kev.KevCollector(_http)]);
         Discovery = new FeedDiscovery(_http);
         Settings = AppSettings.Load(Path.Combine(DataDirectory, "settings.json"));
     }

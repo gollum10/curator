@@ -12,6 +12,10 @@ public sealed record RawItem
     public string? ContentHtml { get; init; }
     public DateTimeOffset? Published { get; init; }
     public DateTimeOffset? Updated { get; init; }
+    /// <summary>Structured fields from a structured source (JSON), kept verbatim as evidence. Null for ordinary feeds.</summary>
+    public string? StructuredJson { get; init; }
+    /// <summary>True when the source supplies the complete record (structured data), regardless of text length.</summary>
+    public bool IsCompleteRecord { get; init; }
 }
 
 public enum CollectOutcome { Success, NotModified, RateLimited, AccessDenied, NotFound, Failed }
