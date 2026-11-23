@@ -13,6 +13,14 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <AssemblyName>PersonalNewsDesk</AssemblyName>
+    <RootNamespace>NewsDesk.Desktop</RootNamespace>
+    <!-- Fluent ThemeMode is marked experimental. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
 
 </Project>

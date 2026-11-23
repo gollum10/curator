@@ -379,6 +379,20 @@ public sealed class NewsDeskStore(Database db)
         tx.Commit();
     }
 
+    public ProjectStats GetProjectStats(Guid projectId)
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT
+              (SELECT COUNT(*) FROM project_items WHERE project_id = $p AND in_inbox = 1 AND is_dismissed = 0 AND is_read = 0) AS unread,
+              (SELECT COUNT(*) FROM project_items WHERE project_id = $p AND in_inbox = 1 AND is_dismissed = 0) AS inbox,
+              (SELECT COUNT(*) FROM project_items WHERE project_id = $p AND is_kept = 1) AS kept,
+              (SELECT COUNT(*) FROM project_sources ps JOIN sources s ON s.id = ps.source_id WHERE ps.project_id = $p) AS sources,
+              (SELECT COUNT(*) FROM project_sources ps JOIN sources s ON s.id = ps.source_id
+                 WHERE ps.project_id = $p AND s.health NOT IN ('Healthy', 'Unknown')) AS warnings
+            """, r => new ProjectStats(r.I("unread"), r.I("inbox"), r.I("kept"), r.I("sources"), r.I("warnings")), null, ("$p", projectId)).Single();
+    }
+
     // ---------------------------------------------------------------- runs and briefings
 
     /// <summary>Inserts a run unless one with the same key already exists. Returns false for a duplicate key.</summary>

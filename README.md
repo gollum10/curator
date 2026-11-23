@@ -3,8 +3,8 @@
 A Windows desktop application that gathers updates from websites you choose, curates them for named projects, and
 presents a manageable news inbox you can read, keep, dismiss, annotate, and export.
 
-**Status:** early build (design phases 1–2). The collection, curation, storage, export engine and a command-line worker
-are working and tested. The WPF desktop UI is not built yet.
+**Status:** early build (design phases 1–2). The collection, curation, storage and export engine, a command-line worker,
+and the WPF desktop app are working.
 
 ## Solution layout
 
@@ -15,7 +15,7 @@ are working and tested. The WPF desktop UI is not built yet.
 | `src/NewsDesk.Infrastructure` | SQLite storage (WAL, FTS5 search, migrations) and `NewsDeskEngine`, which runs collection and briefings. |
 | `src/NewsDesk.Exports` | CSV, Markdown, HTML, and plain-text exporters. |
 | `src/NewsDesk.Worker` | Headless CLI used by Windows Task Scheduler and for source pilots. |
-| `src/NewsDesk.Desktop` | WPF desktop app (placeholder). |
+| `src/NewsDesk.Desktop` | WPF desktop app (`PersonalNewsDesk.exe`). Also runs headless with `--run-due` for the scheduled task. |
 | `tests/NewsDesk.Tests` | xUnit tests, including acceptance scenarios A01–A08 from the design. |
 
 ## Build and test
@@ -26,6 +26,18 @@ Requires the .NET 10 SDK on Windows.
 dotnet build NewsDesk.sln
 dotnet test
 ```
+
+## Run the desktop app
+
+```powershell
+dotnet run --project src/NewsDesk.Desktop
+```
+
+Keyboard: F5 refresh · Ctrl+K keep · Ctrl+D dismiss · Ctrl+Z undo dismiss · Ctrl+U toggle read · Ctrl+O open original ·
+Ctrl+E export item · Ctrl+S save notes · Ctrl+F search · Ctrl+N new project · Ctrl+H home.
+
+**Background collection** (left sidebar) registers a per-user scheduled task that runs `PersonalNewsDesk.exe --run-due`
+every 15 minutes while you are signed in. No administrator rights; closing the window does not stop it.
 
 ## Try it from the command line
 
@@ -69,6 +81,6 @@ Every briefing records its rule version, source outcomes, and whether it was com
 
 ## Known gaps / next steps
 
-- WPF desktop UI (home, project desk, reading pane, briefing view, setup wizard, source manager, export dialog).
-- Scheduled-task registration, XLSX export, collections UI, highlights, retention cleanup, backup/restore.
+- Collections (e.g. "Episode 12"), highlights, XLSX export, retention cleanup, backup/restore, run history screen.
+- Narrow-window layout (reader as a separate view) and a guided first-run setup.
 - Large captures are stored in the database for now. The design calls for a managed content folder.
