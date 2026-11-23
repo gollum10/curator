@@ -88,6 +88,6 @@ Every briefing records its rule version, source outcomes, and whether it was com
 
 ## Known gaps / next steps
 
-- Highlights, run history screen.
+- Highlights (quote-anchored, tied to a content revision).
 - Narrow-window layout (reader as a separate view) and a guided first-run setup.
 - Large captures are stored in the database for now. The design calls for a managed content folder.

@@ -7,7 +7,7 @@ using NewsDesk.Infrastructure.Storage;
 
 namespace NewsDesk.Desktop.ViewModels;
 
-public enum DeskView { Briefing, Inbox, AllMatches, Kept, Dismissed, Sources, Collection }
+public enum DeskView { Briefing, Inbox, AllMatches, Kept, Dismissed, Sources, History, Collection }
 
 /// <summary>An entry in the project sidebar: a fixed view or one of the project's collections.</summary>
 public sealed partial class DeskViewOption(DeskView view, string label, Guid? collectionId = null, int count = 0) : ObservableObject
@@ -46,6 +46,7 @@ public sealed partial class ProjectViewModel : ObservableObject
         [
             new(DeskView.Briefing, "Briefing"), new(DeskView.Inbox, "Inbox"), new(DeskView.AllMatches, "All matches"),
             new(DeskView.Kept, "Kept"), new(DeskView.Dismissed, "Dismissed"), new(DeskView.Sources, "Sources"),
+            new(DeskView.History, "History"),
         ];
         _selectedView = Views.First(v => v.View == initial);
         LoadHeader();
@@ -79,7 +80,7 @@ public sealed partial class ProjectViewModel : ObservableObject
             if (value is null || ReferenceEquals(value, _selectedView)) return;
             _selectedView = value;
             OnPropertyChanged();
-            foreach (var p in new[] { nameof(IsSourcesView), nameof(IsArticlesView), nameof(IsBriefingView), nameof(ShowSearch), nameof(IsCollectionView),
+            foreach (var p in new[] { nameof(IsSourcesView), nameof(IsHistoryView), nameof(IsArticlesView), nameof(IsBriefingView), nameof(ShowSearch), nameof(IsCollectionView),
                          nameof(SelectedCollectionName), nameof(SelectedFixedView), nameof(SelectedCollectionOption) })
                 OnPropertyChanged(p);
             Load();
@@ -102,7 +103,8 @@ public sealed partial class ProjectViewModel : ObservableObject
 
     private DeskViewOption View => _selectedView;
     public bool IsSourcesView => View.View == DeskView.Sources;
-    public bool IsArticlesView => !IsSourcesView;
+    public bool IsHistoryView => View.View == DeskView.History;
+    public bool IsArticlesView => !IsSourcesView && !IsHistoryView;
     public bool IsBriefingView => View.View == DeskView.Briefing;
     public bool IsCollectionView => View.View == DeskView.Collection;
     public string SelectedCollectionName => IsCollectionView ? View.Label : "";
@@ -298,6 +300,10 @@ public sealed partial class ProjectViewModel : ObservableObject
                 LoadSources();
                 IsEmpty = false;
                 return;
+            case DeskView.History:
+                LoadHistory();
+                IsEmpty = false;
+                return;
             case DeskView.Briefing:
                 LoadBriefing();
                 break;
@@ -373,6 +379,65 @@ public sealed partial class ProjectViewModel : ObservableObject
             : "No new items qualified in this briefing. Previously delivered items are in the Inbox.";
     }
 
+    // ------------------------------------------------------------ history
+
+    public ObservableCollection<RunRowViewModel> Runs { get; } = [];
+    public ObservableCollection<SourceOutcomeRow> RunOutcomes { get; } = [];
+    public ObservableCollection<ItemViewModel> RunEntries { get; } = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasSelectedRun))]
+    private RunRowViewModel? selectedRun;
+
+    [ObservableProperty] private string runTitle = "";
+    [ObservableProperty] private string runSummary = "";
+    [ObservableProperty] private string runRules = "";
+    [ObservableProperty] private string runEntriesNote = "";
+    [ObservableProperty] private bool hasNoRuns;
+    public bool HasSelectedRun => SelectedRun is not null;
+
+    private void LoadHistory()
+    {
+        var keep = SelectedRun?.Run.Id;
+        Runs.Clear();
+        foreach (var r in _s.Store.GetRuns(Project.Id, 200)) Runs.Add(new RunRowViewModel(r));
+        HasNoRuns = Runs.Count == 0;
+        SelectedRun = Runs.FirstOrDefault(r => r.Run.Id == keep) ?? Runs.FirstOrDefault();
+    }
+
+    partial void OnSelectedRunChanged(RunRowViewModel? value)
+    {
+        RunOutcomes.Clear();
+        RunEntries.Clear();
+        if (value is null) return;
+        var run = value.Run;
+        RunTitle = $"{run.StartedUtc.ToLocalTime():dddd d MMMM yyyy, HH:mm} — {run.Status}";
+        RunSummary = run.Summary;
+        var rules = _s.Store.GetRules(run.RuleVersionId);
+        RunRules = $"Rules used: top {rules.TopN} {(rules.Mode == CurationMode.Stories ? "distinct stories" : "articles")}, last {FormatWindow(rules.WindowHours)}, " +
+                   $"minimum score {rules.ScoreFloor}" +
+                   (rules.IncludeTerms.Count > 0 ? $", topics: {string.Join("; ", rules.IncludeTerms)}" : ", all items from sources") +
+                   (rules.ExcludeTerms.Count > 0 ? $", excluding: {string.Join("; ", rules.ExcludeTerms)}" : "");
+        foreach (var o in run.SourceOutcomes)
+        {
+            var ok = o.Outcome is "Success" or "NotModified" or "Skipped (fresh)";
+            var detail = o.Outcome == "Success" ? $"{o.NewItems} new, {o.UpdatedItems} updated" : o.Error ?? "";
+            if (o.Warnings.Count > 0) detail = string.Join(" ", new[] { detail }.Concat(o.Warnings).Where(s => s.Length > 0));
+            RunOutcomes.Add(new SourceOutcomeRow(o.SourceTitle, o.Outcome, detail, !ok));
+        }
+        foreach (var entry in _s.Store.GetBriefing(Project.Id, run.Id))
+            RunEntries.Add(new ItemViewModel(entry.Lead, entry));
+        RunEntriesNote = RunEntries.Count == 0
+            ? "This run selected no items (or they have since been removed by cleanup)."
+            : "Items selected in this run. Select one to open the original.";
+    }
+
+    [RelayCommand]
+    private void OpenRunEntry(ItemViewModel? item)
+    {
+        if (item is not null) _dialogs.OpenUrl(item.Url);
+    }
+
     private void LoadSources()
     {
         Sources.Clear();
@@ -400,7 +465,7 @@ public sealed partial class ProjectViewModel : ObservableObject
             ProgressText = "";
             _s.Log($"manual refresh '{Project.Name}': {report.Run.Status} — {report.Run.Summary}");
             LoadHeader();
-            if (View.View is not (DeskView.Briefing or DeskView.Sources or DeskView.Collection)) SelectedView = Views[0];
+            if (View.View is not (DeskView.Briefing or DeskView.Sources or DeskView.Collection or DeskView.History)) SelectedView = Views[0];
             else Load();
         }
         catch (OperationCanceledException)
