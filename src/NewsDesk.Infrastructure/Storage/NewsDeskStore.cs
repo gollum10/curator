@@ -379,6 +379,109 @@ public sealed class NewsDeskStore(Database db)
         tx.Commit();
     }
 
+    // ---------------------------------------------------------------- collections
+
+    /// <summary>Creates a project-owned collection. Names are unique per project, ignoring case.</summary>
+    public CollectionRow CreateCollection(Guid projectId, string name, DateTimeOffset nowUtc)
+    {
+        name = ValidateCollectionName(name);
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        EnsureCollectionNameFree(c, tx, projectId, name, null);
+        var id = Guid.NewGuid();
+        c.Exec("INSERT INTO collections (id, project_id, name, created_utc) VALUES ($id, $p, $n, $now)", tx,
+            ("$id", id), ("$p", projectId), ("$n", name), ("$now", nowUtc));
+        tx.Commit();
+        return new CollectionRow(id, projectId, name, 0, nowUtc);
+    }
+
+    public void RenameCollection(Guid collectionId, string name)
+    {
+        name = ValidateCollectionName(name);
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        var projectId = c.Query("SELECT project_id FROM collections WHERE id = $id", r => r.G("project_id"), tx, ("$id", collectionId)).Single();
+        EnsureCollectionNameFree(c, tx, projectId, name, collectionId);
+        c.Exec("UPDATE collections SET name = $n WHERE id = $id", tx, ("$n", name), ("$id", collectionId));
+        tx.Commit();
+    }
+
+    /// <summary>Deletes the grouping only. Articles, notes, and kept state are unaffected.</summary>
+    public void DeleteCollection(Guid collectionId)
+    {
+        using var c = db.Open();
+        c.Exec("DELETE FROM collections WHERE id = $id", null, ("$id", collectionId));
+    }
+
+    private static string ValidateCollectionName(string name)
+    {
+        name = name.Trim();
+        if (name.Length == 0) throw new ArgumentException("A collection needs a name.");
+        if (name.Length > 120) throw new ArgumentException("Collection names are limited to 120 characters.");
+        return name;
+    }
+
+    private static void EnsureCollectionNameFree(SqliteConnection c, SqliteTransaction tx, Guid projectId, string name, Guid? except)
+    {
+        var clash = c.Query("SELECT id FROM collections WHERE project_id = $p AND lower(name) = lower($n)", r => r.G("id"), tx,
+            ("$p", projectId), ("$n", name)).Any(id => id != except);
+        if (clash) throw new InvalidOperationException($"This project already has a collection named “{name}”.");
+    }
+
+    public IReadOnlyList<CollectionRow> GetCollections(Guid projectId)
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT c.id, c.project_id, c.name, c.created_utc, COUNT(ci.article_id) AS n
+            FROM collections c LEFT JOIN collection_items ci ON ci.collection_id = c.id
+            WHERE c.project_id = $p GROUP BY c.id ORDER BY c.name COLLATE NOCASE
+            """, r => new CollectionRow(r.G("id"), r.G("project_id"), r.S("name"), r.I("n"), r.D("created_utc")), null, ("$p", projectId));
+    }
+
+    /// <summary>Adds a project item to one of that project's collections. Adding twice has no effect.</summary>
+    public void AddToCollection(Guid projectId, Guid collectionId, Guid articleId, DateTimeOffset nowUtc)
+    {
+        using var c = db.Open();
+        var inserted = c.Exec("""
+            INSERT OR IGNORE INTO collection_items (collection_id, article_id, added_utc)
+            SELECT c.id, pi.article_id, $now FROM collections c
+            JOIN project_items pi ON pi.project_id = c.project_id AND pi.article_id = $a
+            WHERE c.id = $c AND c.project_id = $p
+            """, null, ("$c", collectionId), ("$a", articleId), ("$p", projectId), ("$now", nowUtc));
+        if (inserted == 0 && !IsInCollection(c, collectionId, articleId))
+            throw new InvalidOperationException("The item or collection does not belong to this project.");
+    }
+
+    private static bool IsInCollection(SqliteConnection c, Guid collectionId, Guid articleId) =>
+        c.Query("SELECT 1 AS x FROM collection_items WHERE collection_id = $c AND article_id = $a", r => true, null,
+            ("$c", collectionId), ("$a", articleId)).Count > 0;
+
+    public void RemoveFromCollection(Guid collectionId, Guid articleId)
+    {
+        using var c = db.Open();
+        c.Exec("DELETE FROM collection_items WHERE collection_id = $c AND article_id = $a", null, ("$c", collectionId), ("$a", articleId));
+    }
+
+    public IReadOnlySet<Guid> GetCollectionIdsForItem(Guid projectId, Guid articleId)
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT ci.collection_id FROM collection_items ci JOIN collections c ON c.id = ci.collection_id
+            WHERE c.project_id = $p AND ci.article_id = $a
+            """, r => r.G("collection_id"), null, ("$p", projectId), ("$a", articleId)).ToHashSet();
+    }
+
+    /// <summary>Items in a collection in the order they were added, including dismissed ones.</summary>
+    public IReadOnlyList<ItemRow> GetCollectionItems(Guid projectId, Guid collectionId, string? search = null)
+    {
+        var fts = FtsQuery(search);
+        var sql = ItemSelect + " JOIN collection_items ci ON ci.article_id = pi.article_id AND ci.collection_id = $c WHERE pi.project_id = $p"
+                  + (fts is null ? "" : " AND a.id IN (SELECT article_id FROM article_fts WHERE article_fts MATCH $q)")
+                  + " ORDER BY ci.added_utc";
+        using var c = db.Open();
+        return c.Query(sql, MapItem, null, ("$p", projectId), ("$c", collectionId), ("$q", fts));
+    }
+
     public ProjectStats GetProjectStats(Guid projectId)
     {
         using var c = db.Open();

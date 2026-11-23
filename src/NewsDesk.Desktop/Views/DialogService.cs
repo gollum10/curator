@@ -27,6 +27,12 @@ public sealed class DialogService : IDialogService
     public void Info(string message) =>
         MessageBox.Show(Owner!, message, "Personal News Desk", MessageBoxButton.OK, MessageBoxImage.Information);
 
+    public string? Prompt(string title, string message, string initial)
+    {
+        var window = new PromptWindow(title, message, initial) { Owner = Owner };
+        return window.ShowDialog() == true ? window.Value : null;
+    }
+
     /// <summary>Opens only http(s) links, in the default browser. Never launches files or other schemes.</summary>
     public void OpenUrl(string url)
     {

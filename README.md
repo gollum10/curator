@@ -81,6 +81,6 @@ Every briefing records its rule version, source outcomes, and whether it was com
 
 ## Known gaps / next steps
 
-- Collections (e.g. "Episode 12"), highlights, XLSX export, retention cleanup, backup/restore, run history screen.
+- Highlights, XLSX export, retention cleanup, backup/restore, run history screen.
 - Narrow-window layout (reader as a separate view) and a guided first-run setup.
 - Large captures are stored in the database for now. The design calls for a managed content folder.

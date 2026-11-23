@@ -58,14 +58,41 @@
 
             <!-- View selector -->
             <Border Background="{DynamicResource Bg}" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,1,0" Padding="8,12">
-                <ListBox ItemsSource="{Binding Views}" SelectedItem="{Binding SelectedView}" BorderThickness="0" Background="Transparent"
-                         ItemContainerStyle="{StaticResource NavItem}" AutomationProperties.Name="Project views">
-                    <ListBox.ItemTemplate>
-                        <DataTemplate DataType="{x:Type vm:DeskViewOption}">
-                            <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Text}" />
-                        </DataTemplate>
-                    </ListBox.ItemTemplate>
-                </ListBox>
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel>
+                        <ListBox ItemsSource="{Binding Views}" SelectedItem="{Binding SelectedFixedView}" BorderThickness="0" Background="Transparent"
+                                 ItemContainerStyle="{StaticResource NavItem}" AutomationProperties.Name="Project views"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:DeskViewOption}">
+                                    <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Text}" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <DockPanel Margin="10,16,0,4">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource ToolButton}" Padding="6,0" Margin="0" BorderThickness="0"
+                                    Content="+" FontSize="15" Command="{Binding NewCollectionCommand}" ToolTip="New collection"
+                                    AutomationProperties.Name="New collection" />
+                            <TextBlock Style="{StaticResource SectionLabel}" Margin="0" VerticalAlignment="Center" Text="COLLECTIONS" />
+                        </DockPanel>
+                        <TextBlock Style="{StaticResource MutedText}" Margin="10,2,4,0" FontSize="12"
+                                   Text="Group items for an episode, report, or meeting."
+                                   Visibility="{Binding HasCollections, Converter={StaticResource InverseBoolToVis}}" />
+                        <ListBox ItemsSource="{Binding Collections}" SelectedItem="{Binding SelectedCollectionOption}" BorderThickness="0" Background="Transparent"
+                                 ItemContainerStyle="{StaticResource NavItem}" AutomationProperties.Name="Collections"
+                                 ScrollViewer.VerticalScrollBarVisibility="Disabled" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:DeskViewOption}">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right" Text="{Binding Count}" Foreground="{DynamicResource Muted}" FontSize="12" Margin="6,0,0,0" />
+                                        <TextBlock Text="{Binding Label}" Foreground="{DynamicResource Text}" TextTrimming="CharacterEllipsis" />
+                                    </DockPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
 
             <!-- ===================== Article list ===================== -->
@@ -89,6 +116,21 @@
                                 </ItemsControl>
                             </StackPanel>
                         </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Collection header -->
+                <Border DockPanel.Dock="Top" Padding="14,12" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1"
+                        Visibility="{Binding IsCollectionView, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource H2}" FontSize="14.5" Text="{Binding SelectedCollectionName}" />
+                        <TextBlock Style="{StaticResource MutedText}" Text="Collection · in the order items were added" />
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Style="{StaticResource ToolButton}" Content="Export…" Command="{Binding ExportViewCommand}" Padding="10,3" />
+                            <Button Style="{StaticResource ToolButton}" Content="Rename" Command="{Binding RenameCollectionCommand}" Padding="10,3" />
+                            <Button Style="{StaticResource ToolButton}" Content="Delete collection" Command="{Binding DeleteCollectionCommand}" Padding="10,3" Margin="0"
+                                    Foreground="{DynamicResource Danger}" />
+                        </StackPanel>
                     </StackPanel>
                 </Border>
 
@@ -228,6 +270,26 @@
                                            Visibility="{Binding HasGroupKey, Converter={StaticResource BoolToVis}}" />
                             </StackPanel>
                         </Border>
+
+                        <!-- Collections -->
+                        <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}" Margin="0,4,0,0">
+                            <TextBlock Style="{StaticResource SectionLabel}" Text="COLLECTIONS" />
+                            <WrapPanel>
+                                <ItemsControl ItemsSource="{Binding ItemCollections}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type vm:CollectionMembership}">
+                                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsMember}" Margin="0,0,16,6" Foreground="{DynamicResource Text}"
+                                                      AutomationProperties.Name="{Binding Name, StringFormat=In collection {0}}" />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Button Style="{StaticResource ToolButton}" Content="+ New collection with this item" Padding="10,3" Margin="0,0,0,6"
+                                        Command="{Binding NewCollectionWithItemCommand}" />
+                            </WrapPanel>
+                        </StackPanel>
 
                         <!-- Content (plain text only; publisher HTML is never rendered) -->
                         <TextBox Text="{Binding ReaderText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent"

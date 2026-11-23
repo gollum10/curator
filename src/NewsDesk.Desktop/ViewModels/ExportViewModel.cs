@@ -19,11 +19,14 @@ public sealed partial class ExportViewModel : ObservableObject
     private readonly IReadOnlyList<ItemRow> _items;
     private readonly string _projectName;
 
-    public ExportViewModel(IDialogService dialogs, IReadOnlyList<ItemRow> items, string projectName, string title)
+    private readonly string? _collectionName;
+
+    public ExportViewModel(IDialogService dialogs, IReadOnlyList<ItemRow> items, string projectName, string title, string? collectionName = null)
     {
         _dialogs = dialogs;
         _items = items;
         _projectName = projectName;
+        _collectionName = collectionName;
         Title = title;
         selectedFormat = Formats[0];
         selectedScope = Scopes[2];
@@ -54,7 +57,7 @@ public sealed partial class ExportViewModel : ObservableObject
     partial void OnSelectedFormatChanged(Choice<ExportFormat> value) => UpdatePreview();
     partial void OnSelectedScopeChanged(Choice<ContentScope> value) => UpdatePreview();
 
-    private ExportOptions Options => new() { ProjectName = _projectName, Title = Title, Scope = SelectedScope.Value };
+    private ExportOptions Options => new() { ProjectName = _projectName, CollectionName = _collectionName, Title = Title, Scope = SelectedScope.Value };
 
     private string Render(ExportFormat format) => format switch
     {

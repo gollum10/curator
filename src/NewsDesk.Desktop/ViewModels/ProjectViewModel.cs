@@ -7,9 +7,25 @@ using NewsDesk.Infrastructure.Storage;
 
 namespace NewsDesk.Desktop.ViewModels;
 
-public enum DeskView { Briefing, Inbox, AllMatches, Kept, Dismissed, Sources }
+public enum DeskView { Briefing, Inbox, AllMatches, Kept, Dismissed, Sources, Collection }
 
-public sealed record DeskViewOption(DeskView View, string Label);
+/// <summary>An entry in the project sidebar: a fixed view or one of the project's collections.</summary>
+public sealed partial class DeskViewOption(DeskView view, string label, Guid? collectionId = null, int count = 0) : ObservableObject
+{
+    public DeskView View { get; } = view;
+    public Guid? CollectionId { get; } = collectionId;
+    [ObservableProperty] private string label = label;
+    [ObservableProperty] private int count = count;
+}
+
+/// <summary>A checkbox in the reading pane: whether the selected item is in a given collection.</summary>
+public sealed partial class CollectionMembership(Guid collectionId, string name, bool isMember, Action<CollectionMembership> toggled) : ObservableObject
+{
+    public Guid CollectionId { get; } = collectionId;
+    public string Name { get; } = name;
+    [ObservableProperty] private bool isMember = isMember;
+    partial void OnIsMemberChanged(bool value) => toggled(this);
+}
 
 /// <summary>The project desk: briefing, inbox and other views, reading pane, and source manager.</summary>
 public sealed partial class ProjectViewModel : ObservableObject
@@ -31,13 +47,17 @@ public sealed partial class ProjectViewModel : ObservableObject
             new(DeskView.Briefing, "Briefing"), new(DeskView.Inbox, "Inbox"), new(DeskView.AllMatches, "All matches"),
             new(DeskView.Kept, "Kept"), new(DeskView.Dismissed, "Dismissed"), new(DeskView.Sources, "Sources"),
         ];
-        selectedView = Views.First(v => v.View == initial);
+        _selectedView = Views.First(v => v.View == initial);
         LoadHeader();
+        ReloadCollections();
         Load();
     }
 
     public Project Project { get; private set; }
     public IReadOnlyList<DeskViewOption> Views { get; }
+    public ObservableCollection<DeskViewOption> Collections { get; } = [];
+    public ObservableCollection<CollectionMembership> ItemCollections { get; } = [];
+    [ObservableProperty] private bool hasCollections;
     public ObservableCollection<ItemViewModel> Items { get; } = [];
     public ObservableCollection<SourceRowViewModel> Sources { get; } = [];
     public ObservableCollection<FeedOptionViewModel> DiscoveredFeeds { get; } = [];
@@ -46,19 +66,52 @@ public sealed partial class ProjectViewModel : ObservableObject
     [ObservableProperty] private string name = "";
     [ObservableProperty] private string headerDetails = "";
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSourcesView), nameof(IsArticlesView), nameof(IsBriefingView), nameof(ShowSearch))]
-    private DeskViewOption selectedView;
+    private DeskViewOption _selectedView;
 
-    public bool IsSourcesView => SelectedView.View == DeskView.Sources;
+    /// <summary>
+    /// Shared by the views list and the collections list. Null assignments (from the list that lost its selection) are ignored.
+    /// </summary>
+    public DeskViewOption? SelectedView
+    {
+        get => _selectedView;
+        set
+        {
+            if (value is null || ReferenceEquals(value, _selectedView)) return;
+            _selectedView = value;
+            OnPropertyChanged();
+            foreach (var p in new[] { nameof(IsSourcesView), nameof(IsArticlesView), nameof(IsBriefingView), nameof(ShowSearch), nameof(IsCollectionView),
+                         nameof(SelectedCollectionName), nameof(SelectedFixedView), nameof(SelectedCollectionOption) })
+                OnPropertyChanged(p);
+            Load();
+        }
+    }
+
+    /// <summary>Selection for the fixed views list; null while a collection is open so that list shows no highlight.</summary>
+    public DeskViewOption? SelectedFixedView
+    {
+        get => IsCollectionView ? null : _selectedView;
+        set => SelectedView = value;
+    }
+
+    /// <summary>Selection for the collections list; null unless a collection is open.</summary>
+    public DeskViewOption? SelectedCollectionOption
+    {
+        get => IsCollectionView ? _selectedView : null;
+        set => SelectedView = value;
+    }
+
+    private DeskViewOption View => _selectedView;
+    public bool IsSourcesView => View.View == DeskView.Sources;
     public bool IsArticlesView => !IsSourcesView;
-    public bool IsBriefingView => SelectedView.View == DeskView.Briefing;
+    public bool IsBriefingView => View.View == DeskView.Briefing;
+    public bool IsCollectionView => View.View == DeskView.Collection;
+    public string SelectedCollectionName => IsCollectionView ? View.Label : "";
     public bool ShowSearch => IsArticlesView && !IsBriefingView;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelection))]
     [NotifyCanExecuteChangedFor(nameof(ToggleKeepCommand), nameof(DismissCommand), nameof(ToggleReadCommand), nameof(OpenOriginalCommand),
-        nameof(SaveAnnotationsCommand), nameof(ExportSelectedCommand), nameof(RestoreCommand))]
+        nameof(SaveAnnotationsCommand), nameof(ExportSelectedCommand), nameof(RestoreCommand), nameof(NewCollectionWithItemCommand))]
     private ItemViewModel? selectedItem;
 
     public bool HasSelection => SelectedItem is not null;
@@ -90,8 +143,6 @@ public sealed partial class ProjectViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(DiscoverCommand))]
     private bool isDiscovering;
 
-    partial void OnSelectedViewChanged(DeskViewOption value) => Load();
-
     partial void OnSearchTextChanged(string value)
     {
         if (ShowSearch) Load();
@@ -106,6 +157,113 @@ public sealed partial class ProjectViewModel : ObservableObject
             _s.Store.SetRead(Project.Id, newValue.ArticleId, true);
             _changed();
         }
+        LoadItemCollections();
+    }
+
+    private void LoadItemCollections()
+    {
+        ItemCollections.Clear();
+        if (SelectedItem is not { } item) return;
+        var memberOf = _s.Store.GetCollectionIdsForItem(Project.Id, item.ArticleId);
+        foreach (var c in Collections)
+            ItemCollections.Add(new CollectionMembership(c.CollectionId!.Value, c.Label, memberOf.Contains(c.CollectionId.Value), OnMembershipToggled));
+    }
+
+    private void OnMembershipToggled(CollectionMembership m)
+    {
+        if (SelectedItem is not { } item) return;
+        if (m.IsMember)
+        {
+            _s.Store.AddToCollection(Project.Id, m.CollectionId, item.ArticleId, DateTimeOffset.UtcNow);
+            ProgressText = $"Added to {m.Name}.";
+        }
+        else
+        {
+            _s.Store.RemoveFromCollection(m.CollectionId, item.ArticleId);
+            ProgressText = $"Removed from {m.Name}. The item itself is unchanged.";
+            if (View.CollectionId == m.CollectionId) RemoveFromList(item);
+        }
+        ReloadCollections();
+    }
+
+    /// <summary>Syncs the sidebar collection entries in place so the current selection survives.</summary>
+    private void ReloadCollections()
+    {
+        var rows = _s.Store.GetCollections(Project.Id);
+        foreach (var gone in Collections.Where(o => rows.All(r => r.Id != o.CollectionId)).ToList())
+            Collections.Remove(gone);
+        for (var i = 0; i < rows.Count; i++)
+        {
+            var row = rows[i];
+            var existing = Collections.FirstOrDefault(o => o.CollectionId == row.Id);
+            if (existing is null)
+            {
+                Collections.Insert(i, new DeskViewOption(DeskView.Collection, row.Name, row.Id, row.Count));
+                continue;
+            }
+            existing.Label = row.Name;
+            existing.Count = row.Count;
+            var at = Collections.IndexOf(existing);
+            if (at != i) Collections.Move(at, i);
+        }
+        HasCollections = Collections.Count > 0;
+        if (IsCollectionView && !Collections.Contains(View)) SelectedView = Views[0];
+        OnPropertyChanged(nameof(SelectedCollectionName));
+    }
+
+    // ------------------------------------------------------------ collections
+
+    [RelayCommand]
+    private void NewCollection() => CreateCollection(addSelected: false);
+
+    [RelayCommand(CanExecute = nameof(HasItem))]
+    private void NewCollectionWithItem() => CreateCollection(addSelected: true);
+
+    private void CreateCollection(bool addSelected)
+    {
+        var name = _dialogs.Prompt("New collection", "Name the collection, for example “Episode 12” or “Weekly Leadership Briefing”.", "");
+        if (name is null) return;
+        try
+        {
+            var row = _s.Store.CreateCollection(Project.Id, name, DateTimeOffset.UtcNow);
+            if (addSelected && SelectedItem is { } item)
+                _s.Store.AddToCollection(Project.Id, row.Id, item.ArticleId, DateTimeOffset.UtcNow);
+            ReloadCollections();
+            LoadItemCollections();
+            ProgressText = addSelected ? $"Created {row.Name} and added this item." : $"Created {row.Name}.";
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            _dialogs.Info(ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private void RenameCollection()
+    {
+        if (View.CollectionId is not { } id) return;
+        var name = _dialogs.Prompt("Rename collection", "New name:", View.Label);
+        if (name is null || name.Trim() == View.Label) return;
+        try
+        {
+            _s.Store.RenameCollection(id, name);
+            ReloadCollections();
+            LoadItemCollections();
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException)
+        {
+            _dialogs.Info(ex.Message);
+        }
+    }
+
+    [RelayCommand]
+    private void DeleteCollection()
+    {
+        if (View.CollectionId is not { } id) return;
+        if (!_dialogs.Confirm($"Delete the collection “{View.Label}”? The {View.Count} item(s) in it, and their notes, stay in the project.", "Delete collection")) return;
+        _s.Store.DeleteCollection(id);
+        SelectedView = Views[0];
+        ReloadCollections();
     }
 
     private void LoadHeader()
@@ -134,7 +292,7 @@ public sealed partial class ProjectViewModel : ObservableObject
         HasBriefingWarnings = false;
         IsBriefingProblem = false;
 
-        switch (SelectedView.View)
+        switch (View.View)
         {
             case DeskView.Sources:
                 LoadSources();
@@ -143,8 +301,14 @@ public sealed partial class ProjectViewModel : ObservableObject
             case DeskView.Briefing:
                 LoadBriefing();
                 break;
+            case DeskView.Collection:
+                foreach (var row in _s.Store.GetCollectionItems(Project.Id, View.CollectionId!.Value, SearchText))
+                    Items.Add(new ItemViewModel(row));
+                EmptyText = SearchText.Length > 0 ? "No items in this collection match your search."
+                    : "This collection is empty. Open any item and tick this collection under COLLECTIONS in the reading pane.";
+                break;
             default:
-                var view = SelectedView.View switch
+                var view = View.View switch
                 {
                     DeskView.Inbox => ItemView.Inbox,
                     DeskView.Kept => ItemView.Kept,
@@ -231,7 +395,7 @@ public sealed partial class ProjectViewModel : ObservableObject
             ProgressText = "";
             _s.Log($"manual refresh '{Project.Name}': {report.Run.Status} — {report.Run.Summary}");
             LoadHeader();
-            if (SelectedView.View is not (DeskView.Briefing or DeskView.Sources)) SelectedView = Views[0];
+            if (View.View is not (DeskView.Briefing or DeskView.Sources or DeskView.Collection)) SelectedView = Views[0];
             else Load();
         }
         catch (OperationCanceledException)
@@ -261,7 +425,7 @@ public sealed partial class ProjectViewModel : ObservableObject
         var item = SelectedItem!;
         item.IsKept = !item.IsKept;
         _s.Store.SetKept(Project.Id, item.ArticleId, item.IsKept);
-        if (!item.IsKept && SelectedView.View == DeskView.Kept) RemoveFromList(item);
+        if (!item.IsKept && View.View == DeskView.Kept) RemoveFromList(item);
         _changed();
     }
 
@@ -284,7 +448,7 @@ public sealed partial class ProjectViewModel : ObservableObject
         _undo.Push(item);
         CanUndo = true;
         ProgressText = $"Dismissed “{Shorten(item.Title)}”. Ctrl+Z to undo.";
-        if (SelectedView.View != DeskView.Dismissed) RemoveFromList(item);
+        if (View.View != DeskView.Dismissed) RemoveFromList(item);
         _changed();
     }
 
@@ -294,7 +458,7 @@ public sealed partial class ProjectViewModel : ObservableObject
         var item = SelectedItem!;
         _s.Store.Restore(Project.Id, item.ArticleId);
         item.IsDismissed = false;
-        if (SelectedView.View == DeskView.Dismissed) RemoveFromList(item);
+        if (View.View == DeskView.Dismissed) RemoveFromList(item);
         _changed();
     }
 
@@ -355,7 +519,9 @@ public sealed partial class ProjectViewModel : ObservableObject
         Flush();
         var rows = Items.Select(i => ReloadRow(i)).OfType<ItemRow>().ToList();
         if (rows.Count == 0) { _dialogs.Info("There is nothing in this view to export."); return; }
-        _dialogs.ShowExport(new ExportViewModel(_dialogs, rows, Project.Name, $"{Project.Name} — {SelectedView.Label}"));
+        _dialogs.ShowExport(IsCollectionView
+            ? new ExportViewModel(_dialogs, rows, Project.Name, View.Label, collectionName: View.Label)
+            : new ExportViewModel(_dialogs, rows, Project.Name, $"{Project.Name} — {View.Label}"));
     }
 
     [RelayCommand(CanExecute = nameof(HasItem))]

@@ -49,6 +49,8 @@ public sealed record RunRecord
 
 public sealed record BriefingRow(int Rank, ItemRow Lead, IReadOnlyList<ItemRow> Supporting, string? GroupKey, int Score, string Reason, string ComponentsJson);
 
+public sealed record CollectionRow(Guid Id, Guid ProjectId, string Name, int Count, DateTimeOffset CreatedUtc);
+
 public sealed record ProjectStats(int Unread, int Inbox, int Kept, int Sources, int SourceWarnings);
 
 public sealed record IngestStats(int New, int Updated, int Unchanged, int Skipped);
