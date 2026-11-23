@@ -28,6 +28,10 @@ public sealed record ItemRow
     public int Score { get; init; }
     public IReadOnlyList<string> Tags { get; init; } = [];
     public string Notes { get; init; } = "";
+    public IReadOnlyList<ExportHighlight> Highlights { get; init; } = [];
+
+    /// <summary>The text highlights are anchored to: full text if captured, else the excerpt.</summary>
+    public string AnchorText => Text.Length > 0 ? Text : Excerpt;
 }
 
 public sealed record SourceOutcome(Guid SourceId, string SourceTitle, string Outcome, int NewItems, int UpdatedItems, string? Error,
@@ -57,6 +61,15 @@ public sealed record RetentionStats(int ItemsRemoved, int ArticlesRemoved, int R
 }
 
 public sealed record StorageStats(int Projects, int Sources, int Articles, int KeptItems, int Collections, int Notes, long DatabaseBytes);
+
+/// <summary>A saved highlight. <see cref="CurrentStart"/> is null when the quote no longer occurs in the current text.</summary>
+public sealed record HighlightRow(Guid Id, Guid RevisionId, string Quote, int OriginalStart, string Comment, DateTimeOffset CreatedUtc, int? CurrentStart)
+{
+    public bool IsStale => CurrentStart is null;
+}
+
+/// <summary>Highlight as carried into exports.</summary>
+public sealed record ExportHighlight(string Quote, string Comment);
 
 public sealed record CollectionRow(Guid Id, Guid ProjectId, string Name, int Count, DateTimeOffset CreatedUtc);
 

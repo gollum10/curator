@@ -282,7 +282,10 @@ public sealed class NewsDeskStore(Database db)
                pi.is_read, pi.is_kept, pi.is_dismissed, pi.in_inbox, pi.match_reason, pi.score,
                (SELECT group_concat(tag, ',') FROM project_item_tags t WHERE t.project_id = pi.project_id AND t.article_id = pi.article_id) AS tags,
                (SELECT text FROM annotations n WHERE n.project_id = pi.project_id AND n.article_id = pi.article_id AND n.kind = 'note'
-                ORDER BY n.updated_utc DESC LIMIT 1) AS note
+                ORDER BY n.updated_utc DESC LIMIT 1) AS note,
+               (SELECT json_group_array(json_object('q', quote, 'c', text)) FROM
+                  (SELECT h.quote, h.text FROM annotations h WHERE h.project_id = pi.project_id AND h.article_id = pi.article_id
+                   AND h.kind = 'highlight' ORDER BY h.created_utc)) AS highlights
         FROM project_items pi
         JOIN articles a ON a.id = pi.article_id
         JOIN article_revisions r ON r.id = a.current_revision_id
@@ -297,7 +300,77 @@ public sealed class NewsDeskStore(Database db)
         IsRead = r.B("is_read"), IsKept = r.B("is_kept"), IsDismissed = r.B("is_dismissed"), InInbox = r.B("in_inbox"),
         MatchReason = r.S("match_reason"), Score = r.I("score"),
         Tags = r.NS("tags")?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [], Notes = r.NS("note") ?? "",
+        Highlights = ParseHighlights(r.NS("highlights")),
     };
+
+    private sealed record HighlightJson(string? Q, string? C);
+
+    private static IReadOnlyList<ExportHighlight> ParseHighlights(string? json)
+    {
+        if (string.IsNullOrEmpty(json) || json == "[]") return [];
+        return (JsonSerializer.Deserialize<List<HighlightJson>>(json, Json) ?? [])
+            .Where(h => h.Q is not null).Select(h => new ExportHighlight(h.Q!, h.C ?? "")).ToList();
+    }
+
+    // ---------------------------------------------------------------- highlights
+
+    /// <summary>
+    /// Saves a highlight of the current revision's anchor text (full text, else excerpt). The selection is trimmed of
+    /// surrounding whitespace. Returns null if the selection is empty, too long, or outside the text.
+    /// </summary>
+    public HighlightRow? AddHighlight(Guid projectId, Guid articleId, int start, int length, string comment, DateTimeOffset nowUtc)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        var current = c.Query("""
+            SELECT r.id, r.text, r.excerpt FROM project_items pi JOIN articles a ON a.id = pi.article_id
+            JOIN article_revisions r ON r.id = a.current_revision_id WHERE pi.project_id = $p AND pi.article_id = $a
+            """, r => (Id: r.G("id"), Text: r.S("text"), Excerpt: r.S("excerpt")), tx, ("$p", projectId), ("$a", articleId)).SingleOrDefault();
+        if (current.Id == Guid.Empty) return null;
+        var anchorText = current.Text.Length > 0 ? current.Text : current.Excerpt;
+        if (Core.Text.HighlightAnchor.Normalize(anchorText, start, length) is not { } sel) return null;
+
+        var id = Guid.NewGuid();
+        c.Exec("""
+            INSERT INTO annotations (id, project_id, article_id, revision_id, kind, text, quote, start_offset, end_offset, created_utc, updated_utc)
+            VALUES ($id, $p, $a, $rev, 'highlight', $comment, $quote, $start, $end, $now, $now)
+            """, tx, ("$id", id), ("$p", projectId), ("$a", articleId), ("$rev", current.Id), ("$comment", comment.Trim()),
+            ("$quote", sel.Quote), ("$start", sel.Start), ("$end", sel.Start + sel.Quote.Length), ("$now", nowUtc));
+        tx.Commit();
+        return new HighlightRow(id, current.Id, sel.Quote, sel.Start, comment.Trim(), nowUtc, sel.Start);
+    }
+
+    /// <summary>Highlights for an item, each located in the current text (or marked stale if its quote no longer occurs).</summary>
+    public IReadOnlyList<HighlightRow> GetHighlights(Guid projectId, Guid articleId)
+    {
+        using var c = db.Open();
+        var anchorText = c.Query("""
+            SELECT r.text, r.excerpt FROM articles a JOIN article_revisions r ON r.id = a.current_revision_id WHERE a.id = $a
+            """, r => r.S("text").Length > 0 ? r.S("text") : r.S("excerpt"), null, ("$a", articleId)).SingleOrDefault() ?? "";
+        return c.Query("""
+            SELECT id, revision_id, quote, start_offset, text, created_utc FROM annotations
+            WHERE project_id = $p AND article_id = $a AND kind = 'highlight' ORDER BY start_offset, created_utc
+            """, r =>
+        {
+            var quote = r.S("quote");
+            var start = r.I("start_offset");
+            return new HighlightRow(r.G("id"), r.G("revision_id"), quote, start, r.S("text"), r.D("created_utc"),
+                Core.Text.HighlightAnchor.Resolve(anchorText, quote, start));
+        }, null, ("$p", projectId), ("$a", articleId));
+    }
+
+    public void SetHighlightComment(Guid projectId, Guid highlightId, string comment, DateTimeOffset nowUtc)
+    {
+        using var c = db.Open();
+        c.Exec("UPDATE annotations SET text = $t, updated_utc = $now WHERE id = $id AND project_id = $p AND kind = 'highlight'", null,
+            ("$t", comment.Trim()), ("$now", nowUtc), ("$id", highlightId), ("$p", projectId));
+    }
+
+    public void DeleteHighlight(Guid projectId, Guid highlightId)
+    {
+        using var c = db.Open();
+        c.Exec("DELETE FROM annotations WHERE id = $id AND project_id = $p AND kind = 'highlight'", null, ("$id", highlightId), ("$p", projectId));
+    }
 
     public IReadOnlyList<ItemRow> GetItems(Guid projectId, ItemView view, string? search = null, int limit = 500)
     {

@@ -1,7 +1,8 @@
 <UserControl x:Class="NewsDesk.Desktop.Views.ProjectView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:vm="clr-namespace:NewsDesk.Desktop.ViewModels">
+             xmlns:vm="clr-namespace:NewsDesk.Desktop.ViewModels"
+             xmlns:views="clr-namespace:NewsDesk.Desktop.Views">
     <UserControl.InputBindings>
         <KeyBinding Key="F5" Command="{Binding RefreshCommand}" />
         <KeyBinding Key="K" Modifiers="Control" Command="{Binding ToggleKeepCommand}" />
@@ -292,11 +293,51 @@
                         </StackPanel>
 
                         <!-- Content (plain text only; publisher HTML is never rendered) -->
-                        <TextBox Text="{Binding ReaderText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent"
-                                 Foreground="{DynamicResource Text}" FontSize="15" Margin="0,18,0,0" Padding="0"
-                                 AutomationProperties.Name="Article text" />
+                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0" Visibility="{Binding CanHighlight, Converter={StaticResource BoolToVis}}">
+                            <Button Style="{StaticResource ToolButton}" Content="🖍 Highlight selection" Padding="10,3" Click="OnHighlightClick"
+                                    ToolTip="Select text below, then click (Ctrl+M)" />
+                            <TextBlock Style="{StaticResource MutedText}" Text="Select text in the article to highlight it." VerticalAlignment="Center" />
+                        </StackPanel>
+                        <views:HighlightTextBox x:Name="ReaderBox" Text="{Binding ReaderText, Mode=OneWay}"
+                                                Highlights="{Binding DataContext.ItemHighlights, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                Foreground="{DynamicResource Text}" FontSize="15" FontFamily="Segoe UI" Margin="0,10,0,0"
+                                                AutomationProperties.Name="Article text" />
                         <TextBlock Style="{StaticResource MutedText}" Margin="0,8,0,0"
                                    Text="Text shown is what the source's feed provided. Open the original for the complete article and images." />
+
+                        <!-- Highlights -->
+                        <StackPanel DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Visibility="{Binding HasHighlights, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Style="{StaticResource SectionLabel}" Text="YOUR HIGHLIGHTS" />
+                            <ItemsControl ItemsSource="{Binding ItemHighlights}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:HighlightViewModel}">
+                                        <Border Style="{StaticResource Card}" Padding="12,8" Margin="0,0,0,6">
+                                            <DockPanel>
+                                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top">
+                                                    <Button Style="{StaticResource ToolButton}" Content="Comment…" Padding="8,2"
+                                                            Command="{Binding DataContext.CommentHighlightCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Style="{StaticResource ToolButton}" Content="Remove" Padding="8,2" Margin="0"
+                                                            Command="{Binding DataContext.DeleteHighlightCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                            CommandParameter="{Binding}" />
+                                                </StackPanel>
+                                                <StackPanel>
+                                                    <Border Background="{DynamicResource WarningSoft}" CornerRadius="10" Padding="8,1" HorizontalAlignment="Left" Margin="0,0,0,4"
+                                                            Visibility="{Binding IsStale, Converter={StaticResource BoolToVis}}">
+                                                        <TextBlock Text="Text has changed since this was highlighted" FontSize="11.5" Foreground="{DynamicResource Warning}" />
+                                                    </Border>
+                                                    <TextBlock Text="{Binding QuoteLabel}" FontStyle="Italic" TextWrapping="Wrap" Foreground="{DynamicResource Text}" />
+                                                    <TextBlock Text="{Binding Comment}" TextWrapping="Wrap" Foreground="{DynamicResource Text}" Margin="0,4,0,0"
+                                                               Visibility="{Binding HasComment, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBlock Style="{StaticResource MutedText}" Text="{Binding Meta}" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                            </DockPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
 
                         <!-- Related coverage -->
                         <StackPanel Visibility="{Binding HasSupporting, Converter={StaticResource BoolToVis}}">

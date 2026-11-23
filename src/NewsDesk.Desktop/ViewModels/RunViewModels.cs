@@ -16,4 +16,21 @@ public sealed class RunRowViewModel(RunRecord run)
     public string Subline => string.Join(" · ", new[] { Trigger, Duration }.Where(s => s.Length > 0));
 }
 
+/// <summary>A saved highlight in the reading pane.</summary>
+public sealed class HighlightViewModel(HighlightRow row)
+{
+    public HighlightRow Row { get; } = row;
+    public Guid Id => Row.Id;
+    public string Quote => Row.Quote;
+    public string Comment => Row.Comment;
+    public bool HasComment => Row.Comment.Length > 0;
+    public int? CurrentStart => Row.CurrentStart;
+    public int Length => Row.Quote.Length;
+    public bool IsStale => Row.IsStale;
+    public string QuoteLabel => $"“{Row.Quote}”";
+    public string Meta => Row.IsStale
+        ? $"From an earlier version of this article · saved {Row.CreatedUtc.ToLocalTime():d MMM yyyy}"
+        : $"Saved {Row.CreatedUtc.ToLocalTime():d MMM yyyy HH:mm}";
+}
+
 public sealed record SourceOutcomeRow(string Source, string Outcome, string Detail, bool IsProblem);

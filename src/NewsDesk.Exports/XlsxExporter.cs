@@ -16,7 +16,7 @@ public static class XlsxExporter
     {
         using var wb = NewWorkbook(options);
         var ws = wb.Worksheets.Add("Articles");
-        string[] headers = ["Project", "Collection", "Title", "Publisher", "URL", "Published", "Captured", "Coverage", "Tags", "Summary or excerpt", "Notes", "State"];
+        string[] headers = ["Project", "Collection", "Title", "Publisher", "URL", "Published", "Captured", "Coverage", "Tags", "Summary or excerpt", "Notes", "State", "Highlights"];
         WriteHeader(ws, headers);
         var row = 2;
         foreach (var i in items)
@@ -33,9 +33,10 @@ public static class XlsxExporter
             Text(ws.Cell(row, 10), Exporters.Body(i, options.Scope));
             Text(ws.Cell(row, 11), Exporters.IncludesNotes(options.Scope) ? i.Notes : "");
             Text(ws.Cell(row, 12), Exporters.State(i));
+            Text(ws.Cell(row, 13), Exporters.IncludesNotes(options.Scope) ? string.Join("\n", Exporters.HighlightLines(i)) : "");
             row++;
         }
-        Finish(ws, headers.Length, row - 1, wrapColumns: [3, 10, 11], widths: new() { [3] = 50, [5] = 40, [10] = 70, [11] = 40 });
+        Finish(ws, headers.Length, row - 1, wrapColumns: [3, 10, 11, 13], widths: new() { [3] = 50, [5] = 40, [10] = 70, [11] = 40, [13] = 50 });
         wb.SaveAs(output);
     }
 

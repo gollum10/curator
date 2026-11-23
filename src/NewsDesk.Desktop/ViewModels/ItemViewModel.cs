@@ -37,7 +37,9 @@ public sealed partial class ItemViewModel : ObservableObject
     public string Subline => $"{Row.SourceTitle} · {DateLabel}";
     public string Excerpt => Row.Excerpt;
     public string Coverage => Exporters.CoverageLabel(Row.CaptureLevel);
-    public string ReaderText => Row.Text.Length > 0 ? Row.Text : Row.Excerpt.Length > 0 ? Row.Excerpt : "This source supplied only a headline and link.";
+    /// <summary>Same text highlights are anchored to (full text, else excerpt), so selection offsets line up.</summary>
+    public string ReaderText => Row.AnchorText.Length > 0 ? Row.AnchorText : "This source supplied only a headline and link.";
+    public bool CanHighlight => Row.AnchorText.Length > 0;
     public string CapturedLabel => $"Captured {Row.CapturedUtc.ToLocalTime():yyyy-MM-dd HH:mm}";
 
     public bool HasRank => Rank is not null;

@@ -20,7 +20,11 @@ public sealed record ExportOptions
 public static class Exporters
 {
     private static readonly string[] CsvColumns =
-        ["project", "collection", "title", "publisher", "url", "published_utc", "captured_utc", "capture_level", "tags", "summary_or_excerpt", "notes", "state"];
+        ["project", "collection", "title", "publisher", "url", "published_utc", "captured_utc", "capture_level", "tags", "summary_or_excerpt", "notes", "highlights", "state"];
+
+    /// <summary>Highlights as one line each: “quote” — comment.</summary>
+    public static IEnumerable<string> HighlightLines(ItemRow i) =>
+        i.Highlights.Select(h => $"“{h.Quote}”" + (h.Comment.Length > 0 ? $" — {h.Comment}" : ""));
 
     public static string ToCsv(IEnumerable<ItemRow> items, ExportOptions options)
     {
@@ -32,7 +36,8 @@ public static class Exporters
             [
                 options.ProjectName, options.CollectionName ?? "", i.Title, i.SourceTitle, i.Url,
                 Iso(i.PublishedUtc), Iso(i.CapturedUtc), i.CaptureLevel.ToString(), string.Join("; ", i.Tags),
-                Body(i, options.Scope), options.Scope is ContentScope.NotesAndExcerpt or ContentScope.FullText ? i.Notes : "", State(i),
+                Body(i, options.Scope), IncludesNotes(options.Scope) ? i.Notes : "",
+                IncludesNotes(options.Scope) ? string.Join(" | ", HighlightLines(i)) : "", State(i),
             ];
             sb.AppendJoin(',', fields.Select(CsvField)).Append("\r\n");
         }
@@ -73,7 +78,14 @@ public static class Exporters
                 foreach (var line in body.Split('\n')) sb.Append("> ").AppendLine(MdEscape(line));
                 sb.AppendLine();
             }
-            if (options.Scope is ContentScope.NotesAndExcerpt or ContentScope.FullText && i.Notes.Length > 0)
+            if (IncludesNotes(options.Scope) && i.Highlights.Count > 0)
+            {
+                sb.AppendLine("**Highlights:**");
+                sb.AppendLine();
+                foreach (var line in HighlightLines(i)) sb.AppendLine("- " + MdEscape(line.Replace('\n', ' ')));
+                sb.AppendLine();
+            }
+            if (IncludesNotes(options.Scope) && i.Notes.Length > 0)
             {
                 sb.AppendLine("**Notes:** " + MdEscape(i.Notes));
                 sb.AppendLine();
@@ -107,7 +119,14 @@ public static class Exporters
             sb.AppendLine($"<p class=\"meta\">{E(i.SourceTitle)} · {E(DateLabel(i))} · {E(CoverageLabel(i.CaptureLevel))} · <a href=\"#src{n + 1}\">[{n + 1}]</a></p>");
             var body = Body(i, options.Scope);
             if (body.Length > 0) sb.AppendLine($"<blockquote>{E(body)}</blockquote>");
-            if (options.Scope is ContentScope.NotesAndExcerpt or ContentScope.FullText && i.Notes.Length > 0)
+            if (IncludesNotes(options.Scope) && i.Highlights.Count > 0)
+            {
+                sb.AppendLine("<p class=\"meta\"><strong>Highlights</strong></p><ul>");
+                foreach (var h in i.Highlights)
+                    sb.AppendLine($"<li><mark>{E(h.Quote)}</mark>{(h.Comment.Length > 0 ? " — " + E(h.Comment) : "")}</li>");
+                sb.AppendLine("</ul>");
+            }
+            if (IncludesNotes(options.Scope) && i.Notes.Length > 0)
                 sb.AppendLine($"<p class=\"notes\"><strong>Notes:</strong> {E(i.Notes)}</p>");
         }
         sb.AppendLine("<h2>Sources</h2><ol>");
@@ -130,7 +149,9 @@ public static class Exporters
             sb.AppendLine($"{i.SourceTitle} · {DateLabel(i)}");
             var body = Body(i, options.Scope);
             if (body.Length > 0) sb.AppendLine(body);
-            if (options.Scope is ContentScope.NotesAndExcerpt or ContentScope.FullText && i.Notes.Length > 0) sb.AppendLine("Notes: " + i.Notes);
+            if (IncludesNotes(options.Scope))
+                foreach (var line in HighlightLines(i)) sb.AppendLine("Highlight: " + line);
+            if (IncludesNotes(options.Scope) && i.Notes.Length > 0) sb.AppendLine("Notes: " + i.Notes);
             sb.AppendLine(i.Url);
             sb.AppendLine();
         }

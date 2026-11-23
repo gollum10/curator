@@ -162,8 +162,61 @@ public sealed partial class ProjectViewModel : ObservableObject
         LoadItemCollections();
     }
 
+    // ------------------------------------------------------------ highlights
+
+    public ObservableCollection<HighlightViewModel> ItemHighlights { get; } = [];
+    [ObservableProperty] private bool hasHighlights;
+
+    private void LoadItemHighlights()
+    {
+        ItemHighlights.Clear();
+        if (SelectedItem is { } item)
+            foreach (var h in _s.Store.GetHighlights(Project.Id, item.ArticleId)) ItemHighlights.Add(new HighlightViewModel(h));
+        HasHighlights = ItemHighlights.Count > 0;
+    }
+
+    /// <summary>Called by the view with the reader's current selection.</summary>
+    public void AddHighlight((int Start, int Length)? selection)
+    {
+        if (SelectedItem is not { CanHighlight: true } item) return;
+        if (selection is not { } sel)
+        {
+            ProgressText = "Select some text in the article first, then choose Highlight.";
+            return;
+        }
+        var saved = _s.Store.AddHighlight(Project.Id, item.ArticleId, sel.Start, sel.Length, "", DateTimeOffset.UtcNow);
+        if (saved is null)
+        {
+            ProgressText = $"That selection can't be highlighted (empty, or longer than {Core.Text.HighlightAnchor.MaxQuoteLength} characters).";
+            return;
+        }
+        LoadItemHighlights();
+        ProgressText = "Highlight saved.";
+        _changed();
+    }
+
+    [RelayCommand]
+    private void CommentHighlight(HighlightViewModel? h)
+    {
+        if (h is null) return;
+        var text = _dialogs.Prompt("Highlight comment", $"Comment on {Shorten(h.QuoteLabel)}", h.Comment);
+        if (text is null) return;
+        _s.Store.SetHighlightComment(Project.Id, h.Id, text, DateTimeOffset.UtcNow);
+        LoadItemHighlights();
+    }
+
+    [RelayCommand]
+    private void DeleteHighlight(HighlightViewModel? h)
+    {
+        if (h is null) return;
+        _s.Store.DeleteHighlight(Project.Id, h.Id);
+        LoadItemHighlights();
+        ProgressText = "Highlight removed.";
+    }
+
     private void LoadItemCollections()
     {
+        LoadItemHighlights();
         ItemCollections.Clear();
         if (SelectedItem is not { } item) return;
         var memberOf = _s.Store.GetCollectionIdsForItem(Project.Id, item.ArticleId);

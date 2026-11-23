@@ -3,8 +3,8 @@
 A Windows desktop application that gathers updates from websites you choose, curates them for named projects, and
 presents a manageable news inbox you can read, keep, dismiss, annotate, and export.
 
-**Status:** early build (design phases 1–2). The collection, curation, storage and export engine, a command-line worker,
-and the WPF desktop app are working.
+**Status:** core release (design phase 2, capabilities P01–P08) is complete: collection, curation, storage, collections,
+highlights, exports, cleanup and backup, a command-line worker, and the WPF desktop app.
 
 ## Solution layout
 
@@ -34,7 +34,7 @@ dotnet run --project src/NewsDesk.Desktop
 ```
 
 Keyboard: F5 refresh · Ctrl+K keep · Ctrl+D dismiss · Ctrl+Z undo dismiss · Ctrl+U toggle read · Ctrl+O open original ·
-Ctrl+E export item · Ctrl+S save notes · Ctrl+F search · Ctrl+N new project · Ctrl+H home.
+Ctrl+E export item · Ctrl+M highlight selection · Ctrl+S save notes · Ctrl+F search · Ctrl+N new project · Ctrl+H home.
 
 **Background collection** (left sidebar) registers a per-user scheduled task that runs `PersonalNewsDesk.exe --run-due`
 every 15 minutes while you are signed in. No administrator rights; closing the window does not stop it.
@@ -88,6 +88,6 @@ Every briefing records its rule version, source outcomes, and whether it was com
 
 ## Known gaps / next steps
 
-- Highlights (quote-anchored, tied to a content revision).
+- Design phase 3: website extraction templates, structured advisory connectors (CISA KEV), optional AI summaries.
 - Narrow-window layout (reader as a separate view) and a guided first-run setup.
 - Large captures are stored in the database for now. The design calls for a managed content folder.
