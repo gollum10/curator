@@ -14,7 +14,9 @@ if (cli.Command is null or "help" or "--help" or "-h") { PrintHelp(); return 0; 
 var db = new Database(cli.Option("--db") ?? Database.DefaultPath());
 var store = new NewsDeskStore(db);
 using var http = new SafeHttp();
-var engine = new NewsDeskEngine(store, [new FeedCollector(http), new NewsDesk.Connectors.Kev.KevCollector(http)]);
+var robots = new RobotsCache(http);
+var engine = new NewsDeskEngine(store, [new FeedCollector(http, robots: robots), new NewsDesk.Connectors.Kev.KevCollector(http),
+    new NewsDesk.Connectors.Extraction.ExtractionCollector(http, robots)]);
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) => { e.Cancel = true; cts.Cancel(); };
 var progress = new Progress<string>(m => Console.Error.WriteLine("  " + m));
@@ -53,8 +55,12 @@ try
         {
             var project = RequireProject(cli.Positional(0));
             var url = cli.Positional(1) ?? throw new UsageException("source-add <project> <url>");
-            var discovery = await new FeedDiscovery(http).DiscoverAsync(url, cts.Token);
+            var discovery = await new FeedDiscovery(http, robots).DiscoverAsync(url, cts.Token);
             Console.WriteLine(discovery.Message);
+            foreach (var s in discovery.ExtractionSuggestions)
+                Console.WriteLine($"  extract: {s.Prefix}  ({s.Count} links)  e.g. {string.Join(" | ", s.Samples)}");
+            if (discovery.ExtractionSuggestions.Count > 0)
+                Console.WriteLine($"Use: source-extract \"{project.Name}\" {discovery.ExtractionPage} <prefix>");
             if (discovery.Feeds.Count == 0) return 2;
             var pick = int.Parse(cli.Option("--pick") ?? "1");
             if (discovery.Feeds.Count > 1 && cli.Option("--pick") is null)
@@ -70,6 +76,20 @@ try
             Console.WriteLine("Recent entries:");
             foreach (var item in feed.Preview.Take(5))
                 Console.WriteLine($"  - {item.Title}  [{item.Published?.ToLocalTime().ToString("g") ?? "date unknown"}]");
+            return 0;
+        }
+
+        case "source-extract":
+        {
+            var project = RequireProject(cli.Positional(0));
+            var listUrl = cli.Positional(1) ?? throw new UsageException("source-extract <project> <list-page-url> <link-prefix> [--date-selector CSS]");
+            var prefix = cli.Positional(2) ?? throw new UsageException("source-extract <project> <list-page-url> <link-prefix>");
+            var template = new NewsDesk.Connectors.Extraction.ExtractionTemplate { ListUrl = listUrl, LinkPrefix = prefix, DateSelector = cli.Option("--date-selector") };
+            var title = cli.Option("--title") ?? $"{new Uri(listUrl).Host} · {prefix}";
+            var source = store.GetOrAddSource(NewsDesk.Connectors.Extraction.ExtractionCollector.SourceKey(template), title, listUrl,
+                NewsDesk.Connectors.Extraction.ExtractionCollector.ConnectorName, NewsDesk.Connectors.Extraction.ExtractionCollector.SerializeTemplate(template));
+            store.Subscribe(new ProjectSource(project.Id, source.Id, int.Parse(cli.Option("--priority") ?? "50"), cli.Flag("--primary")));
+            Console.WriteLine($"Subscribed '{project.Name}' to {source.Title} (website extraction of {listUrl}, links under {prefix}).");
             return 0;
         }
 
@@ -255,6 +275,7 @@ static void PrintHelp() => Console.WriteLine("""
                   [--window HOURS] [--top N] [--stories] [--floor 50]
                   [--schedule manual|interval:MIN|daily@HH:MM|weekly:Mon,Fri@HH:MM]
       source-add <project> <url> [--pick N] [--priority 0-100] [--primary]
+      source-extract <project> <list-page-url> <link-prefix> [--date-selector CSS] [--title T] [--priority N] [--primary]
       sources [project]                          Source health
       run <project>                              Refresh now and show the briefing
       run-due                                    Run scheduled projects that are due (for Task Scheduler)

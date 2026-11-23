@@ -105,15 +105,15 @@ public sealed class NewsDeskStore(Database db)
 
     // ---------------------------------------------------------------- sources
 
-    public Source GetOrAddSource(string feedUrl, string? title, string? siteUrl, string connector = "feed")
+    public Source GetOrAddSource(string feedUrl, string? title, string? siteUrl, string connector = "feed", string? configJson = null)
     {
         using var c = db.Open();
         using var tx = c.BeginTransaction();
         var existing = c.Query("SELECT * FROM sources WHERE feed_url = $u", MapSource, tx, ("$u", feedUrl)).SingleOrDefault();
         if (existing is not null) { tx.Commit(); return existing; }
-        var s = new Source { FeedUrl = feedUrl, Title = title ?? new Uri(feedUrl).Host, SiteUrl = siteUrl, Connector = connector };
-        c.Exec("INSERT INTO sources (id, feed_url, site_url, title, connector, health) VALUES ($id, $u, $site, $t, $conn, $h)", tx,
-            ("$id", s.Id), ("$u", s.FeedUrl), ("$site", s.SiteUrl), ("$t", s.Title), ("$conn", s.Connector), ("$h", s.Health));
+        var s = new Source { FeedUrl = feedUrl, Title = title ?? new Uri(feedUrl).Host, SiteUrl = siteUrl, Connector = connector, ConfigJson = configJson };
+        c.Exec("INSERT INTO sources (id, feed_url, site_url, title, connector, health, config_json) VALUES ($id, $u, $site, $t, $conn, $h, $cfg)", tx,
+            ("$id", s.Id), ("$u", s.FeedUrl), ("$site", s.SiteUrl), ("$t", s.Title), ("$conn", s.Connector), ("$h", s.Health), ("$cfg", s.ConfigJson));
         tx.Commit();
         return s;
     }
@@ -167,6 +167,7 @@ public sealed class NewsDeskStore(Database db)
         Id = r.G("id"), FeedUrl = r.S("feed_url"), SiteUrl = r.NS("site_url"), Title = r.S("title"), Connector = r.S("connector"),
         Health = r.E<SourceHealth>("health"), LastAttemptUtc = r.ND("last_attempt_utc"), LastSuccessUtc = r.ND("last_success_utc"),
         LastError = r.NS("last_error"), NextRetryUtc = r.ND("next_retry_utc"), ETag = r.NS("etag"), LastModified = r.NS("last_modified"),
+        ConfigJson = r.NS("config_json"),
     };
 
     // ---------------------------------------------------------------- articles
@@ -458,6 +459,28 @@ public sealed class NewsDeskStore(Database db)
                 INSERT INTO annotations (id, project_id, article_id, revision_id, kind, text, created_utc, updated_utc)
                 SELECT $id, $p, $a, current_revision_id, 'note', $t, $now, $now FROM articles WHERE id = $a
                 """, tx, ("$id", Guid.NewGuid()), ("$p", projectId), ("$a", articleId), ("$t", text), ("$now", nowUtc));
+        tx.Commit();
+    }
+
+    /// <summary>Identities already stored for a source, including retention tombstones and first-run baselines.</summary>
+    public IReadOnlySet<string> GetKnownIdentities(Guid sourceId)
+    {
+        using var c = db.Open();
+        return c.Query("""
+            SELECT CASE WHEN publisher_id IS NOT NULL THEN 'pid:' || publisher_id ELSE 'url:' || canonical_url END AS identity
+            FROM articles WHERE source_id = $s
+            UNION SELECT identity FROM article_tombstones WHERE source_id = $s
+            """, r => r.S("identity"), null, ("$s", sourceId)).ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>Records identities as seen so they are never collected as new (e.g. older items on a page at first extraction).</summary>
+    public void AddTombstones(Guid sourceId, IEnumerable<string> identities, DateTimeOffset nowUtc)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        foreach (var id in identities)
+            c.Exec("INSERT OR IGNORE INTO article_tombstones (source_id, identity, deleted_utc) VALUES ($s, $i, $now)", tx,
+                ("$s", sourceId), ("$i", id), ("$now", nowUtc));
         tx.Commit();
     }
 

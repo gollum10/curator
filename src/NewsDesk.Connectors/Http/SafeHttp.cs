@@ -20,7 +20,13 @@ public sealed record FetchResponse(
 /// HTTP client for untrusted public URLs. Every connection (including each redirect hop) re-resolves DNS and refuses
 /// non-public addresses. Responses are capped in size after decompression.
 /// </summary>
-public sealed class SafeHttp : IDisposable
+/// <summary>Fetches untrusted public URLs. Implemented by <see cref="SafeHttp"/>; tests supply fakes.</summary>
+public interface IFetcher
+{
+    Task<FetchResponse> GetAsync(Uri uri, string? etag, string? lastModified, CancellationToken ct);
+}
+
+public sealed class SafeHttp : IFetcher, IDisposable
 {
     public const long DefaultMaxBytes = 10 * 1024 * 1024;
     private readonly HttpClient _client;

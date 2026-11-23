@@ -153,7 +153,9 @@ public sealed class NewsDeskEngine(NewsDeskStore store, IEnumerable<ISourceColle
             try
             {
                 progress?.Report($"Fetching {source.Title}");
-                var result = await collector.CollectAsync(source, ct);
+                var result = collector is IIncrementalCollector incremental
+                    ? await incremental.CollectAsync(source, store.GetKnownIdentities(source.Id), ct)
+                    : await collector.CollectAsync(source, ct);
                 return Apply(source, result);
             }
             finally { hostGate.Release(); }
@@ -175,9 +177,12 @@ public sealed class NewsDeskEngine(NewsDeskStore store, IEnumerable<ISourceColle
                 var skipped = normalized.Count(n => n is null);
                 if (skipped > 0) warnings.Add($"{skipped} entries had no usable link and were skipped.");
                 stats = store.Ingest(source.Id, normalized.OfType<NormalizedItem>(), now);
-                if (result.Items.Count == 0 && source.LastSuccessUtc is not null)
+                if (result.BaselineIdentities.Count > 0) store.AddTombstones(source.Id, result.BaselineIdentities, now);
+                var listed = result.ListedCount ?? result.Items.Count;
+                if (listed == 0 && result.ListedCount is null && source.LastSuccessUtc is not null)
                     warnings.Add("Feed returned no entries; check whether the source has changed.");
-                source.Health = SourceHealth.Healthy;
+                // An extraction rule that suddenly matches nothing is a broken template, not a quiet news day.
+                source.Health = listed == 0 && result.ListedCount is not null ? SourceHealth.ExtractionBroken : SourceHealth.Healthy;
                 source.LastSuccessUtc = now;
                 source.LastError = null;
                 source.NextRetryUtc = null;

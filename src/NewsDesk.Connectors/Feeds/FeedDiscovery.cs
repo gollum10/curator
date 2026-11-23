@@ -8,13 +8,18 @@ namespace NewsDesk.Connectors.Feeds;
 
 public sealed record DiscoveredFeed(string FeedUrl, string? Title, string? SiteUrl, IReadOnlyList<RawItem> Preview, string Connector = "feed");
 
-public sealed record DiscoveryResult(IReadOnlyList<DiscoveredFeed> Feeds, string Message);
+public sealed record DiscoveryResult(IReadOnlyList<DiscoveredFeed> Feeds, string Message)
+{
+    /// <summary>When no feed exists: link patterns that could be followed with website extraction, on the page that was checked.</summary>
+    public IReadOnlyList<Extraction.LinkPattern> ExtractionSuggestions { get; init; } = [];
+    public string? ExtractionPage { get; init; }
+}
 
 /// <summary>
 /// Turns a user-entered URL into feeds the app can actually collect. Reports what was found; finding a feed does not
 /// imply full article text is available.
 /// </summary>
-public sealed partial class FeedDiscovery(SafeHttp http)
+public sealed partial class FeedDiscovery(IFetcher http, RobotsCache? robots = null)
 {
     [GeneratedRegex(@"<link\b[^>]*>", RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 2000)]
     private static partial Regex LinkTag();
@@ -99,13 +104,20 @@ public sealed partial class FeedDiscovery(SafeHttp http)
             if (guessed && feeds.Count > 0) break;
         }
 
-        var message = feeds.Count switch
+        if (feeds.Count > 0)
+            return new(feeds, feeds.Count == 1 ? "Found 1 feed." : $"Found {feeds.Count} feeds; choose which to follow.");
+
+        // No feed: offer website extraction, but only where robots.txt allows automated reading.
+        if (robots is not null && !await robots.IsAllowedAsync(page.FinalUri, ct))
+            return new([], $"No RSS or Atom feed found for {uri.Host}, and its robots.txt does not allow automated reading, so website extraction isn't available.");
+        var suggestions = Extraction.PageExtractor.SuggestPatterns(html, page.FinalUri);
+        return new([], suggestions.Count > 0
+            ? $"No RSS or Atom feed found for {uri.Host}. You can follow it with website extraction instead: choose which links to follow below."
+            : $"No RSS or Atom feed found for {uri.Host}, and no list of article links was recognized on this page. Try the address of a page that lists articles.")
         {
-            0 => $"No RSS or Atom feed found for {uri.Host}. Website extraction is a planned expansion feature.",
-            1 => "Found 1 feed.",
-            _ => $"Found {feeds.Count} feeds; choose which to follow.",
+            ExtractionSuggestions = suggestions,
+            ExtractionPage = page.FinalUri.ToString(),
         };
-        return new(feeds, message);
     }
 
     private static DiscoveredFeed? TryParse(byte[] body, Uri uri)

@@ -28,8 +28,10 @@ public sealed class AppServices : IDisposable
         DataDirectory = Path.GetDirectoryName(dbPath)!;
         Store = new NewsDeskStore(new Database(dbPath));
         _http = new SafeHttp();
-        Engine = new NewsDeskEngine(Store, [new FeedCollector(_http), new NewsDesk.Connectors.Kev.KevCollector(_http)]);
-        Discovery = new FeedDiscovery(_http);
+        var robots = new RobotsCache(_http);
+        Engine = new NewsDeskEngine(Store, [new FeedCollector(_http, robots: robots), new NewsDesk.Connectors.Kev.KevCollector(_http),
+            new NewsDesk.Connectors.Extraction.ExtractionCollector(_http, robots)]);
+        Discovery = new FeedDiscovery(_http, robots);
         Settings = AppSettings.Load(Path.Combine(DataDirectory, "settings.json"));
     }
 

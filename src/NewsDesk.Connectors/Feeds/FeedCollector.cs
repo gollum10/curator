@@ -5,7 +5,7 @@ using NewsDesk.Core.Model;
 
 namespace NewsDesk.Connectors.Feeds;
 
-public sealed class FeedCollector(SafeHttp http, int maxItemsPerRun = 200) : ISourceCollector
+public sealed class FeedCollector(IFetcher http, int maxItemsPerRun = 200, RobotsCache? robots = null) : ISourceCollector
 {
     public bool CanHandle(Source source) => source.Connector == "feed";
 
@@ -60,6 +60,9 @@ public sealed class FeedCollector(SafeHttp http, int maxItemsPerRun = 200) : ISo
         if (capped) warnings.Add($"Feed listed {feed.Items.Count} entries; only the first {maxItemsPerRun} were collected.");
         var undated = feed.Items.Count(i => i.Published is null && i.Updated is null);
         if (undated > 0) warnings.Add($"{undated} entries have no publication date.");
+        // Feeds are published for readers, so this is a notice rather than a block; the user decides whether to keep the source.
+        if (robots is not null && !await robots.IsAllowedAsync(uri, ct))
+            warnings.Add($"{uri.Host}'s robots.txt asks automated agents not to fetch this address. Consider removing this source if you want to follow that preference.");
 
         return new CollectResult
         {

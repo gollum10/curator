@@ -25,11 +25,21 @@ public sealed partial class SourceRowViewModel : ObservableObject
     public Source Source { get; private set; }
     public string Title => Source.Title;
     public string FeedUrl => Source.FeedUrl;
+
+    /// <summary>Human-readable address: the feed URL, or what an extraction rule / structured connector reads.</summary>
+    public string DisplayAddress => Source.Connector switch
+    {
+        NewsDesk.Connectors.Extraction.ExtractionCollector.ConnectorName when
+            NewsDesk.Connectors.Extraction.ExtractionCollector.ReadTemplate(Source.ConfigJson) is { } t =>
+            $"Website extraction: links under {t.LinkPrefix} on {t.ListUrl}",
+        NewsDesk.Connectors.Kev.KevCollector.ConnectorName => $"Structured data: {Source.FeedUrl}",
+        _ => Source.FeedUrl,
+    };
     public string HealthLabel => Source.Health switch
     {
         SourceHealth.Unknown => "Not checked yet",
         SourceHealth.AuthenticationRequired => "Authentication required",
-        SourceHealth.ExtractionBroken => "Feed missing or broken",
+        SourceHealth.ExtractionBroken => "Broken: missing, or page layout changed",
         var h => h.ToString(),
     };
     public bool IsHealthy => Source.Health == SourceHealth.Healthy;
@@ -67,6 +77,15 @@ public sealed partial class SourceRowViewModel : ObservableObject
         Source = _store.GetSource(Source.Id) ?? Source;
         OnPropertyChanged(string.Empty);
     }
+}
+
+public sealed class PatternOptionViewModel(NewsDesk.Connectors.Extraction.LinkPattern pattern, string page)
+{
+    public NewsDesk.Connectors.Extraction.LinkPattern Pattern { get; } = pattern;
+    public string Page { get; } = page;
+    public string Title => $"Links under {Pattern.Prefix}";
+    public string CountLabel => $"{Pattern.Count} links on this page";
+    public IReadOnlyList<string> Samples => Pattern.Samples;
 }
 
 public sealed class FeedOptionViewModel(DiscoveredFeed feed)

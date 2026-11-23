@@ -236,6 +236,10 @@ public sealed class Database
         """
         ALTER TABLE article_revisions ADD COLUMN structured_json TEXT;
         """,
+        // v4: connector configuration (website extraction rules)
+        """
+        ALTER TABLE sources ADD COLUMN config_json TEXT;
+        """,
     ];
 
     /// <summary>Schema version this build creates and understands.</summary>

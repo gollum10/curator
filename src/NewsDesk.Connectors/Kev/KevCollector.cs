@@ -12,7 +12,7 @@ namespace NewsDesk.Connectors.Kev;
 /// CISA Known Exploited Vulnerabilities catalog (structured JSON). Each catalog entry becomes one item whose publisher ID
 /// is the CVE ID and whose structured fields are kept verbatim with the catalog version and retrieval time.
 /// </summary>
-public sealed class KevCollector(SafeHttp http, int maxItemsPerRun = 200) : ISourceCollector
+public sealed class KevCollector(IFetcher http, int maxItemsPerRun = 200) : ISourceCollector
 {
     public const string ConnectorName = "cisa-kev";
     public const string CatalogUrl = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json";

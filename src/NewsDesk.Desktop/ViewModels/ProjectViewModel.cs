@@ -62,6 +62,7 @@ public sealed partial class ProjectViewModel : ObservableObject
     public ObservableCollection<ItemViewModel> Items { get; } = [];
     public ObservableCollection<SourceRowViewModel> Sources { get; } = [];
     public ObservableCollection<FeedOptionViewModel> DiscoveredFeeds { get; } = [];
+    public ObservableCollection<PatternOptionViewModel> ExtractionOptions { get; } = [];
     public ObservableCollection<string> BriefingWarnings { get; } = [];
 
     [ObservableProperty] private string name = "";
@@ -687,12 +688,15 @@ public sealed partial class ProjectViewModel : ObservableObject
         if (string.IsNullOrWhiteSpace(NewSourceUrl)) { DiscoveryMessage = "Enter a website or feed address."; return; }
         IsDiscovering = true;
         DiscoveredFeeds.Clear();
+        ExtractionOptions.Clear();
         DiscoveryMessage = "Looking for feeds…";
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
             var result = await Task.Run(() => _s.Discovery.DiscoverAsync(NewSourceUrl, cts.Token));
             foreach (var f in result.Feeds) DiscoveredFeeds.Add(new FeedOptionViewModel(f));
+            if (result.ExtractionPage is { } extractPage)
+                foreach (var pattern in result.ExtractionSuggestions) ExtractionOptions.Add(new PatternOptionViewModel(pattern, extractPage));
             DiscoveryMessage = result.Feeds.Count > 0
                 ? result.Message + " Feeds usually include headlines and excerpts; full articles may need the original site."
                 : result.Message;
@@ -716,6 +720,24 @@ public sealed partial class ProjectViewModel : ObservableObject
         DiscoveredFeeds.Clear();
         NewSourceUrl = "";
         DiscoveryMessage = $"Added {source.Title}. Refresh to collect from it.";
+        LoadSources();
+        _changed();
+    }
+
+    [RelayCommand]
+    private void FollowPattern(PatternOptionViewModel? option)
+    {
+        if (option is null) return;
+        var template = new NewsDesk.Connectors.Extraction.ExtractionTemplate { ListUrl = option.Page, LinkPrefix = option.Pattern.Prefix };
+        var host = Uri.TryCreate(option.Page, UriKind.Absolute, out var u) ? u.Host : option.Page;
+        var source = _s.Store.GetOrAddSource(NewsDesk.Connectors.Extraction.ExtractionCollector.SourceKey(template), $"{host} · {option.Pattern.Prefix}",
+            option.Page, NewsDesk.Connectors.Extraction.ExtractionCollector.ConnectorName,
+            NewsDesk.Connectors.Extraction.ExtractionCollector.SerializeTemplate(template));
+        _s.Store.Subscribe(new ProjectSource(Project.Id, source.Id));
+        ExtractionOptions.Clear();
+        DiscoveredFeeds.Clear();
+        NewSourceUrl = "";
+        DiscoveryMessage = $"Following {source.Title} with website extraction. Refresh to collect; the first run takes the newest items and marks older ones as seen.";
         LoadSources();
         _changed();
     }

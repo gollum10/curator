@@ -540,6 +540,30 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
 
+                    <ItemsControl ItemsSource="{Binding ExtractionOptions}" Margin="0,8,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type vm:PatternOptionViewModel}">
+                                <Border Style="{StaticResource Card}" Margin="0,0,0,8" Padding="14">
+                                    <DockPanel>
+                                        <Button DockPanel.Dock="Right" Style="{StaticResource PrimaryButton}" Content="Follow" VerticalAlignment="Top"
+                                                Command="{Binding DataContext.FollowPatternCommand, RelativeSource={RelativeSource AncestorType=UserControl}}" CommandParameter="{Binding}" />
+                                        <StackPanel>
+                                            <TextBlock Style="{StaticResource H2}" FontSize="14" Text="{Binding Title}" />
+                                            <TextBlock Style="{StaticResource MutedText}" Text="{Binding CountLabel}" FontWeight="SemiBold" Margin="0,2,0,2" />
+                                            <ItemsControl ItemsSource="{Binding Samples}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding StringFormat=• {0}}" Style="{StaticResource MutedText}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
                     <TextBlock Style="{StaticResource H2}" Text="Following" Margin="0,24,0,8" />
                     <TextBlock Style="{StaticResource MutedText}" Text="No sources yet. Add a website or feed above."
                                Visibility="{Binding HasNoSources, Converter={StaticResource BoolToVis}}" />
@@ -585,7 +609,7 @@
                                                     </TextBlock>
                                                 </Border>
                                             </StackPanel>
-                                            <TextBlock Style="{StaticResource MutedText}" Text="{Binding FeedUrl}" />
+                                            <TextBlock Style="{StaticResource MutedText}" Text="{Binding DisplayAddress}" />
                                             <TextBlock Style="{StaticResource MutedText}" Text="{Binding Details}" Margin="0,4,0,0" />
                                             <TextBlock Text="{Binding Error}" Foreground="{DynamicResource Warning}" FontSize="12.5" TextWrapping="Wrap" Margin="0,4,0,0"
                                                        Visibility="{Binding HasError, Converter={StaticResource BoolToVis}}" />

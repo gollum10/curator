@@ -64,6 +64,8 @@ public sealed class Source
     public string? SiteUrl { get; set; }
     public string Title { get; set; } = "";
     public string Connector { get; set; } = "feed";
+    /// <summary>Connector-specific configuration (JSON), e.g. a website extraction rule.</summary>
+    public string? ConfigJson { get; set; }
     public SourceHealth Health { get; set; } = SourceHealth.Unknown;
     public DateTimeOffset? LastAttemptUtc { get; set; }
     public DateTimeOffset? LastSuccessUtc { get; set; }
